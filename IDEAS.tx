@@ -8,3 +8,8 @@ bit representaion
 
 [Other]
 
+[Libs] (what I need)
+logging module
+bitarrays
+better unittests
+
