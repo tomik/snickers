@@ -1,0 +1,8 @@
+
+better logging mechanism
+
+D
+  Is there a python-like list comprehension idiom ?
+
+  Get value from asoc array or default ?
+

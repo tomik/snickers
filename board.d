@@ -6,6 +6,7 @@
 import std.bitmanip;
 import std.stdio;
 import std.conv;
+import std.ctype;
 
 import logger;
 
@@ -86,43 +87,69 @@ public:
 
   /** Dumps the board to snickers string format. */
   string toString() const {
-    // 4 chars per char + ws
+    // result
     char[] strBoard;
-    // form groups
+    // peg -> groupId mapping if peg has > 1 bridge
     auto groups = [buildPegGroups(Color.white),
                    buildPegGroups(Color.black)];
 
-    // cursor in the string
-    uint cur = 0;
     for (auto i = 0; i < mSize * mSize; i++) {
       if (i % mSize == 0 && i != 0) {
         strBoard ~= '\n';
       }
 
-      // post formatter adds special characters + padding
+      // post formatter handles different paddings
+      // distance between columns is 3
       int padding = 3;
       scope(exit) { 
-        strBoard ~= "    "[ 1 .. padding + 1]; };
+        assert(padding <= 3);
+        char[3] s = "   ";
+
+        // top and bottom edge
+        if(i / mSize == 0 || i / mSize == mSize - 2)
+          s = "___";
+        // left and right edge
+        if(i % mSize == 0)
+          s[0] = '|';
+        if(i % mSize == mSize - 1)
+          s[$ - 1] = '|';
+        strBoard ~= s[ 3 - padding .. 3];
+      };
 
       if (!mPegs[Color.white][i] && !mPegs[Color.black][i]) {
         strBoard ~= ".";
         continue;
       }
 
-      auto chrPeg = ['w', 'b'];
-      auto chrPegBig = ['W', 'B'];
+      // there is a peg to be printed
 
-      // there is a peg
+      // str repr for color and group
+      static auto chrPeg = ['w', 'b'];
+      auto numsGen = (int i) { return to!string(i); }; 
+      auto charsGen = (int i) {
+        // groups start from 0
+        assert(i > 0);
+        char[] s;
+        while (i > 0) {
+          s ~= 'a' + i % 26 - 1;
+          i /= 26;
+        }
+        return to!string(s);
+      }; 
+      auto strGroupGen = [numsGen, charsGen];
+
       foreach (color; [Color.white, Color.black]) {
         if (!mPegs[color][i])
           continue;
 
+        // peg has bridges
         if(i in groups[color]){
-          auto strGroup = to!string(groups[color][i]); 
-          strBoard ~= chrPegBig[color];
+          auto strGroup = strGroupGen[color](groups[color][i]); 
+          strBoard ~= toupper(chrPeg[color]);
           strBoard ~= strGroup;
           padding -= strGroup.length;
         }
+        // standalone peg
         else {
           strBoard ~= chrPeg[color];
         }
@@ -133,7 +160,7 @@ public:
 
   /**
    * Example board(7x7) in snickers string format
-   * . __.___W1__.___.___.___. 
+   * .___.___W1__.___.___.___. 
    * Ba  .   .   .   b   W1 |.
    * .|  .  Ba  W1   .   .  |.
    * .|  W1  .   .   .   .  |.
