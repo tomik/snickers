@@ -3,10 +3,18 @@
  * Twixt board representation.
  */
 
+import std.algorithm;
+import std.array;
 import std.bitmanip;
-import std.stdio;
 import std.conv;
 import std.ctype;
+import std.stdio;
+import std.string;
+import std.range;
+
+debug {
+  import std.regex;
+}
 
 import logger;
 
@@ -15,7 +23,7 @@ private {
 }
 
 static this() {
-  lgr = new Logger(__FILE__, LogLevel.LL_TRACE);
+  lgr = new Logger(__FILE__, LogLevel.LL_DEBUG);
 }
 
 alias uint BridgeId;
@@ -52,6 +60,21 @@ enum Field {
   none
 }
 
+
+/** Helper function to create a "set" from an array.*/
+bool[T] toAssoc(T)(T[] elems) {
+  bool[T] res;
+  for (int i = 0; i < elems.length; i++)
+    res[elems[i]] = 1;
+  return res;
+}
+
+class BoardException : Exception {
+  public this(string s) {
+    super(s);
+  }
+};
+
 class Board {
 
 public:
@@ -83,6 +106,88 @@ public:
 
   /** Loads the board from snickers string format. */
   this(string strBoard) {
+
+    string[] lines = splitlines(strBoard);
+    if(!lines.length)
+      throw new BoardException("empty input"); 
+
+    // top edge is white's edge - no black pegs can be there
+    this(count!("a == '.' || a == 'W' || a == 'w'")(lines[0]));
+
+    // current peg position 
+    int pos = 0;
+    // groupId -> list of pegs mapping
+    int[][int] groups;
+
+    foreach (line; lines) {
+      line = strip(line);
+
+      if((line.length + 3) * 4 < 16)
+        throw new BoardException("too short line"); 
+
+      while (!line.empty) {
+        if (pos >= mSize * mSize)
+          throw new BoardException("invalid input"); 
+
+        auto toTake = min(4, line.length);
+        scope (exit) {pos++, line = line[toTake .. $];};
+
+        auto s = removechars(to!string(take(line, toTake)), " _|");
+        if (s == ".")
+          continue;
+        assert(!match(s, "^[a-zA-Z0-9]*$").empty);
+        assert(tolower(s[0]) == 'b' || tolower(s[0]) == 'w');
+        Color color = tolower(s[0]) == 'b' ? Color.black : Color.white;
+
+        // match groupId - for white numbers for black alphas
+        int groupId;
+        if (color == Color.white) 
+          groupId = to!int(s[1 .. $]);
+        else
+          groupId = reduce!("a + to!int(b)")(0, s[1 .. $]);
+
+        // place peg
+        mPegs[color][pos] = 1;
+
+        auto group = groupId in groups; 
+        if(!group)
+        {
+          groups[groupId] = [pos]; 
+          continue;
+        }
+
+        // place bridges
+        foreach (friendPos; *group)
+          tryPlaceBridge(pos, friendPos, color);
+        *group ~= pos;
+      }
+    }
+  }
+
+  unittest {
+
+   // Example board(7x7) in snickers string format
+   
+   string strBoardRaw =
+    ".__|.___W1__.___.___.__|.__
+     Ba |.   .   .   b   W1 |.
+     .  |.   Ba  W1  .   .  |.
+     .  |W1  .   .   .   .  |.
+     .  |.   .   .   .   .  |.
+     .__|.___W1__.___.___.__|.__
+     .  |.   .   .   W1  .  |.";
+    
+   // TODO this obvious one liner doesn't work
+   // auto strBoard = joiner(map!(strip)(splitlines(strBoardRaw)), "xyz");
+   
+   char[] cBoard;
+   foreach (line; splitlines(strBoardRaw))
+       cBoard ~= "\n" ~ strip(line);
+   auto strBoard = to!string(strip(cBoard));
+
+
+   Board board = new Board(strBoard);
+   assert(board.toString() == strBoard);
   }
 
   /** Dumps the board to snickers string format. */
@@ -98,6 +203,10 @@ public:
         strBoard ~= '\n';
       }
 
+      // padding in the beginning for better look
+      // if (i % mSize == 0)
+         // strBoard ~= " ";
+
       // post formatter handles different paddings
       // distance between columns is 3
       int padding = 3;
@@ -108,12 +217,19 @@ public:
         // top and bottom edge
         if(i / mSize == 0 || i / mSize == mSize - 2)
           s = "___";
+        if(i % mSize == mSize - 1)
+          s[$ - 1] = ' ';
         // left and right edge
         if(i % mSize == 0)
-          s[0] = '|';
-        if(i % mSize == mSize - 1)
           s[$ - 1] = '|';
-        strBoard ~= s[ 3 - padding .. 3];
+        if(i % mSize == mSize - 2)
+          s[$ - 1] = '|';
+        // TODO ugly
+        // strip the whitespace in the end
+        if(i % mSize == mSize - 1) 
+          strBoard ~= strip(s[ 3 - padding .. 3]);
+        else
+          strBoard ~= s[ 3 - padding .. 3];
       };
 
       if (!mPegs[Color.white][i] && !mPegs[Color.black][i]) {
@@ -131,7 +247,7 @@ public:
         assert(i > 0);
         char[] s;
         while (i > 0) {
-          s ~= 'a' + i % 26 - 1;
+          s ~= 'a' + (i - 1) % 26;
           i /= 26;
         }
         return to!string(s);
@@ -158,17 +274,6 @@ public:
     return to!string(strBoard);
   }
 
-  /**
-   * Example board(7x7) in snickers string format
-   * .___.___W1__.___.___.___. 
-   * Ba  .   .   .   b   W1 |.
-   * .|  .  Ba  W1   .   .  |.
-   * .|  W1  .   .   .   .  |.
-   * .|  .   .   .   .   .  |.
-   * .|__.___W1__.___.___.__|.
-   * .   .   .   .   W1  .   . 
-   */
-
   unittest { 
     Board board = new Board(7);
     auto f = (int x, int y) { return board.calcBridgeId(x, y); };
@@ -189,7 +294,6 @@ public:
     board.mPegs[Color.black][11] = 1;
     board.mPegs[Color.black][16] = 1;
     board.mBridges[f(7, 16)] = 1;
-    writeln(board.toString());
   }
 
   void placePeg(Coord coord, Color color) {
@@ -275,6 +379,17 @@ private:
     lgr.dbug("building peg groups for color(%s) groupIds(%s)", color, groupIds);
 
     return groupIds;
+  }
+
+  bool tryPlaceBridge(int pos1, int pos2, Color color) {
+      if (pos1 - pos2 !in toAssoc(mNgbOffsets))
+        return false;
+      BridgeId bid = calcBridgeId(pos1, pos2);
+      if (canPlaceBridge(bid)) {
+        mBridges[bid] = 1;
+        return true;
+      }
+     return false;
   }
 
   bool hasBridge(BridgeId bridge) const {
