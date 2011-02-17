@@ -4,17 +4,17 @@
  */
 
 import std.algorithm;
-import std.array;
-import std.bitmanip;
 import std.conv;
 import std.ctype;
+import std.exception;
+import std.range;
 import std.stdio;
 import std.string;
-import std.range;
 
-debug {
-  import std.regex;
-}
+import std.bitmanip : BitArray;
+import std.regex : match;
+import std.typecons : Tuple, tuple;
+
 
 import logger;
 
@@ -69,6 +69,17 @@ bool[T] toAssoc(T)(T[] elems) {
   return res;
 }
 
+/** Helper function for normalizing input board representations. */
+string stripLines(string s) {
+  // TODO this obvious one liner doesn't work
+  // auto strBoard = joiner(map!(strip)(splitlines(strBoardRaw)), "xyz");
+  
+  char[] cBoard;
+  foreach (line; splitlines(s))
+      cBoard ~= "\n" ~ strip(line);
+  return to!string(strip(cBoard));
+}
+
 class BoardException : Exception {
   public this(string s) {
     super(s);
@@ -106,7 +117,6 @@ public:
 
   /** Loads the board from snickers string format. */
   this(string strBoard) {
-
     string[] lines = splitlines(strBoard);
     if(!lines.length)
       throw new BoardException("empty input"); 
@@ -122,6 +132,8 @@ public:
     foreach (line; lines) {
       line = strip(line);
 
+      lgr.trace("parsing line(%s), peg(%s)", line, to!string(pos));
+
       if((line.length + 3) * 4 < 16)
         throw new BoardException("too short line"); 
 
@@ -133,61 +145,111 @@ public:
         scope (exit) {pos++, line = line[toTake .. $];};
 
         auto s = removechars(to!string(take(line, toTake)), " _|");
+        // empty field
         if (s == ".")
           continue;
-        assert(!match(s, "^[a-zA-Z0-9]*$").empty);
-        assert(tolower(s[0]) == 'b' || tolower(s[0]) == 'w');
-        Color color = tolower(s[0]) == 'b' ? Color.black : Color.white;
 
-        // match groupId - for white numbers for black alphas
-        int groupId;
-        if (color == Color.white) 
-          groupId = to!int(s[1 .. $]);
-        else
-          groupId = reduce!("a + to!int(b)")(0, s[1 .. $]);
+        if(match(s, "^[bwBW][a-z0-9]*$").empty)
+          throw new BoardException(format("invalid peg(%s) format", pos));
+
+        Color color = tolower(s[0]) == 'b' ? Color.black : Color.white;
 
         // place peg
         mPegs[color][pos] = 1;
 
+        // resolve group belongance
+
+        int groupId = 0;
+        // peg isn't in any group
+        // it has and will have no bridges
+        if (s.length == 1)
+          continue;
+
+        // match groupId - for white numbers for black alphas
+        try { 
+          if (color == Color.white) 
+            groupId = to!int(s[1 .. $]);
+          else
+            groupId = reduce!("a + to!int(b)")(0, s[1 .. $]);
+        } catch (ConvException) {
+          throw new BoardException(format("invalid peg(%s) format - can't deduce group", pos));
+        }
+
+        // update groups
         auto group = groupId in groups; 
-        if(!group)
-        {
+        if(!group) {
           groups[groupId] = [pos]; 
           continue;
         }
 
-        // place bridges
-        foreach (friendPos; *group)
-          tryPlaceBridge(pos, friendPos, color);
         *group ~= pos;
       }
     }
+
+    // now information on all groups is present - place bridges
+    
+    BridgeId[] allBridges;
+    bool[BridgeId] inCross;
+
+    // find all potential bridges to be built
+    foreach (group; groups)
+      // TODO rewrite with ranges
+      for (int i = 0; i < group.length; i++) 
+        for (int j = i; j < group.length; j++)
+          if (isBridgeShape(group[i], group[j]))
+            allBridges ~= calcBridgeId(group[i], group[j]);
+
+    // find those in cross
+    for (int i = 0; i < allBridges.length; i++) 
+      for (int j = i; j < allBridges.length; j++)
+        if (bridgesInCross(allBridges[i], allBridges[j])) {
+          inCross[allBridges[i]] = 1;
+          inCross[allBridges[j]] = 1;
+        }
+
+    foreach (bridge; allBridges) 
+      if (bridge !in inCross) {
+        enforce(tryPlaceBridge(bridge),
+        "can't place bridge considered placeable");
+      }
+
+    lgr.trace(format("loading board: bridges all(%s) bridges in cross(%s)",
+      allBridges, inCross));
+
+    // indicator of change
+    int lastLen = 0;
+    while (inCross.length && lastLen != inCross.length)
+    {
+      lastLen = inCross.length;
+
+      // check what is already connected
+      auto currentGroups = buildPegGroups();
+
+      // drop those in cross which connect connected groups
+      BridgeId[] toRemove;
+      foreach (bridge, ref isPresent; inCross) {
+        assert(isPresent);
+        // get pos1, pos2 from bridge id as a tuple
+        auto ends = calcBridgeEnds(bridge);
+        auto gid1 = ends[0] in currentGroups;
+        auto gid2 = ends[1] in currentGroups;
+
+        // these pegs are connected via different route already 
+        if(gid1 !is null && *gid1 == *gid2)
+          toRemove ~= bridge;
+      }
+
+      foreach (bridge; toRemove) 
+        inCross.remove(bridge);
+    }
+    
+    foreach (bridge, _; inCross)
+      enforce(tryPlaceBridge(bridge),
+        "can't place bridge after in cross filter");
   }
 
-  unittest {
-
-   // Example board(7x7) in snickers string format
-   
-   string strBoardRaw =
-    ".__|.___W1__.___.___.__|.__
-     Ba |.   .   .   b   W1 |.
-     .  |.   Ba  W1  .   .  |.
-     .  |W1  .   .   .   .  |.
-     .  |.   .   .   .   .  |.
-     .__|.___W1__.___.___.__|.__
-     .  |.   .   .   W1  .  |.";
-    
-   // TODO this obvious one liner doesn't work
-   // auto strBoard = joiner(map!(strip)(splitlines(strBoardRaw)), "xyz");
-   
-   char[] cBoard;
-   foreach (line; splitlines(strBoardRaw))
-       cBoard ~= "\n" ~ strip(line);
-   auto strBoard = to!string(strip(cBoard));
-
-
-   Board board = new Board(strBoard);
-   assert(board.toString() == strBoard);
+  static string normStrBoard(string s) {
+    return stripLines(s);
   }
 
   /** Dumps the board to snickers string format. */
@@ -195,8 +257,8 @@ public:
     // result
     char[] strBoard;
     // peg -> groupId mapping if peg has > 1 bridge
-    auto groups = [buildPegGroups(Color.white),
-                   buildPegGroups(Color.black)];
+    auto groups = [buildPegGroupsByColor(Color.white),
+                   buildPegGroupsByColor(Color.black)];
 
     for (auto i = 0; i < mSize * mSize; i++) {
       if (i % mSize == 0 && i != 0) {
@@ -243,7 +305,7 @@ public:
       static auto chrPeg = ['w', 'b'];
       auto numsGen = (int i) { return to!string(i); }; 
       auto charsGen = (int i) {
-        // groups start from 0
+        // groups start from 1
         assert(i > 0);
         char[] s;
         while (i > 0) {
@@ -272,28 +334,6 @@ public:
       }
     }
     return to!string(strBoard);
-  }
-
-  unittest { 
-    Board board = new Board(7);
-    auto f = (int x, int y) { return board.calcBridgeId(x, y); };
-    board.mPegs[Color.white][2] = 1;
-    board.mPegs[Color.white][12] = 1;
-    board.mPegs[Color.white][17] = 1;
-    board.mPegs[Color.white][22] = 1;
-    board.mPegs[Color.white][37] = 1;
-    board.mPegs[Color.white][46] = 1;
-
-    board.mBridges[f(2, 17)] = 1;
-    board.mBridges[f(17, 12)] = 1;
-    board.mBridges[f(17, 22)] = 1;
-    board.mBridges[f(22, 37)] = 1;
-    board.mBridges[f(37, 46)] = 1;
-
-    board.mPegs[Color.black][7] = 1;
-    board.mPegs[Color.black][11] = 1;
-    board.mPegs[Color.black][16] = 1;
-    board.mBridges[f(7, 16)] = 1;
   }
 
   void placePeg(Coord coord, Color color) {
@@ -334,8 +374,16 @@ public:
 
 private:
 
-  int[int] buildPegGroups(Color color) const {
-    uint nextGid = 1;
+  int[int] buildPegGroups() const {
+    auto groups = buildPegGroupsByColor(Color.white);
+    foreach(key, group; buildPegGroupsByColor(Color.black, groups.length)) {
+      assert(key !in groups);
+      groups[key] = group;
+    }
+    return groups;
+  }
+
+  int[int] buildPegGroupsByColor(Color color, uint nextGid = 1) const {
     // pos -> groupId
     int[int] groupIds; 
     // groupId -> [pos]
@@ -345,6 +393,7 @@ private:
       if(!mPegs[color][i] || !isValidPos(i, color))
         continue;
       auto ngbs = getConnectedPegs(i, color);
+
       lgr.trace("color(%s), peg(%s) connected pegs(%s)", color, i, ngbs);
       if(!ngbs.length)
         continue;
@@ -377,19 +426,38 @@ private:
     }
     
     lgr.dbug("building peg groups for color(%s) groupIds(%s)", color, groupIds);
-
     return groupIds;
   }
 
   bool tryPlaceBridge(int pos1, int pos2, Color color) {
-      if (pos1 - pos2 !in toAssoc(mNgbOffsets))
-        return false;
-      BridgeId bid = calcBridgeId(pos1, pos2);
-      if (canPlaceBridge(bid)) {
-        mBridges[bid] = 1;
-        return true;
-      }
-     return false;
+    if (!isBridgeShape(pos1, pos2))
+      return false;
+    BridgeId bid = calcBridgeId(pos1, pos2);
+    if (canPlaceBridge(bid)) {
+      mBridges[bid] = 1;
+      return true;
+    }
+    return false;
+  }
+
+  bool tryPlaceBridge(BridgeId bid) {
+    if (canPlaceBridge(bid)) {
+      mBridges[bid] = 1;
+      return true;
+    }
+    return false;
+  }
+
+  bool removeBridge(BridgeId bridge) {
+    if (!hasBridge(bridge))
+      return false;
+    mBridges[bridge] = 1;
+    return true;
+  }
+
+  // bridge doesn't have to be constructable
+  bool isBridgeShape(int pos1, int pos2) {
+    return (pos1 - pos2 in toAssoc(mNgbOffsets)) !is null;
   }
 
   bool hasBridge(BridgeId bridge) const {
@@ -420,6 +488,23 @@ private:
     return minPos * 4 + ((maxPos - minPos) + off) % mSize;
   }
 
+  Tuple!(int, int) calcBridgeEnds(BridgeId bid) const
+  body {
+    int pos1 = bid / 4;
+    int off = 0;
+    switch (bid % 4) {
+      case 0 : off = mSize - 2; break;
+      case 1 : off = 2 * mSize - 1; break;
+      case 2 : off = 2 * mSize + 1; break;
+      case 3 : off = 1 * mSize + 2; break;
+    }
+    return tuple(pos1, pos1 + off); 
+  }
+
+  // TODO
+  unittest {
+  }
+
   bool canPlaceBridge(BridgeId bridge) const
   in {
     assert(!hasBridge(bridge));
@@ -430,6 +515,13 @@ private:
         return false;
       
     return true;
+  }
+
+  bool bridgesInCross(BridgeId bridge1, BridgeId bridge2) const {
+    foreach (spoilOffset; mSpoilOffsets[getBridgeType(bridge1)])
+      if (bridge1 + spoilOffset == bridge2)
+        return true;
+    return false;
   }
 
   int[] getConnectedPegs(int pos, Color color) const
@@ -524,6 +616,4 @@ private:
   // bridge id + elements of mSpoilOffsets[bridge type] == possible spoils
   int[9] mSpoilOffsets[4];
 }
-
-
 

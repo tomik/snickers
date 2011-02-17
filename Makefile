@@ -1,6 +1,6 @@
 
 all:
-	dmd *d -gc -debug -unittest -ofsnickers
+	dmd *d -gc -unittest -ofsnickers
 	./snickers
 
 clean:
