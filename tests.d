@@ -301,3 +301,42 @@ unittest {
 
 // determining a winner
 
+unittest {
+
+  string[10] strBoards;
+  int i = 0;
+
+  strBoards[i] =
+   ".__|.___W1__.__|.__
+    Ba |.   .   .  |.
+    .  |.   Ba  W1 |.
+    .__|.___w___.__|b__
+    .  |.   .   w  |.";
+   
+  Board board = new Board(strBoards[i]);
+  assert(board.toString() == Board.normStrBoard(strBoards[i]));
+  assert(board.getWinner() == Color.empty);
+
+  strBoards[++i] =
+   ".__|.___W1__.__|.__
+    Ba |.   .   .  |.
+    .  |.   Ba  W1 |.
+    .__|.___w___.__|Ba_
+    .  |.   .   w  |.";
+   
+  board = new Board(strBoards[i]);
+  assert(board.toString() == Board.normStrBoard(strBoards[i]));
+  assert(board.getWinner() == Color.black);
+
+  strBoards[++i] =
+   ".__|.___W1__w__|.__
+    Ba |.   .   .  |.
+    .  |.   Ba  W1 |.
+    .__|W1__w___.__|b__
+    .  |.   .   W1 |.";
+   
+  board = new Board(strBoards[i]);
+  assert(board.toString() == Board.normStrBoard(strBoards[i]));
+  assert(board.getWinner() == Color.white);
+}
+

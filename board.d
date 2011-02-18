@@ -378,16 +378,53 @@ public:
     return true;
   }
 
-  bool hasWinner() const {
-    return false;
-  }
-
   /** There must be a winner present for this to have meaning. */
   Color getWinner() const {
-    return Color.white;
+    if (checkWinner(Color.white))
+      return Color.white;
+
+    if (checkWinner(Color.black))
+      return Color.black;
+
+    return Color.empty;
   }
 
 private:
+
+  bool checkWinner(Color color) const {
+    BitArray visited;
+    visited.length = mSize * mSize;
+
+    int off = color == Color.white ? 1 : mSize;
+    int limit = color == Color.white ? mSize : mSize * mSize;
+
+    for (int i = 0; i < limit; i += off) {
+      if(!mPegs[color][i] || !isValidPos(i, color) || visited[i])
+        continue;
+      
+      // faster ?
+      int[] group = [i];
+      visited[i] = true;
+
+      while (!group.empty) {
+        int peg = group.front();
+
+        foreach(ngb; getConnectedPegs(peg, color))
+          if (!visited[ngb]) {
+            visited[ngb] = true;
+            group ~= ngb;
+          }
+        group.popFront();
+
+        // win check
+        // since white/black cannot generate move in blacks/white winning line
+        // we can leave out the color check
+        if (peg % mSize == mSize - 1 || peg / mSize == mSize - 1) 
+          return true;
+      }
+    }
+    return false;
+  }
 
   int[int] buildPegGroups() const {
     auto groups = buildPegGroupsByColor(Color.white);
