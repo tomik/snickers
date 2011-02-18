@@ -5,11 +5,12 @@ import std.stdio;
 
 import board;
 
-// board loading
+// board loading and dumping
 
+// empty board
 unittest {
 
- string strBoard =
+ string inBoard =
   ".__|.___.___.___.___.__|.__
    .  |.   .   .   .   .  |.
    .  |.   .   .   .   .  |.
@@ -18,13 +19,13 @@ unittest {
    .__|.___.___.___.___.__|.__
    .  |.   .   .   .   .  |.";
   
- Board board = new Board(strBoard);
- assert(board.toString() == Board.normStrBoard(strBoard));
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
 }
 
 unittest {
 
- string strBoard =
+ string inBoard =
   ".__|.___W1__.___.___.__|.__
    Ba |.   .   .   b   W1 |.
    .  |.   Ba  W1  .   .  |.
@@ -33,15 +34,30 @@ unittest {
    .__|.___W1__.___.___.__|.__
    .  |.   .   .   W1  .  |.";
   
- Board board = new Board(strBoard);
- assert(board.toString() == Board.normStrBoard(strBoard));
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
+}
+
+// multiple groups for one player
+unittest {
+
+ string inBoard =
+  ".__|.___W1__.___.___.__|.__
+   Ba |.   .   .   b   W1 |.
+   .  |.   Ba  W1  .   .  |.
+   .  |W1  .   .   .   .  |.
+   .  |.   .   .   .   W2 |.
+   .__|.___.___.___.___.__|.__
+   .  |.   .   .   W2  .  |.";
+  
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
 }
 
 // special situation with group overlap
-
 unittest {
 
- string strBoard =
+ string inBoard =
   ".__|.___.___W1__.___.__|.__
    .  |.   .   .   .   W1 |. 
    .  |.   W1  Ba  .   .  |.
@@ -50,53 +66,100 @@ unittest {
    .__|.___.___.___.___.__|.__
    .  |.   .   .   .   .  |.";
   
- Board board = new Board(strBoard);
- // writeln(Board.normStrBoard(strBoard));
- // writeln(board.toString());
- assert(board.toString() == Board.normStrBoard(strBoard));
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
 }
 
 unittest {
 
- string strBoard =
+ string inBoard =
   ".__|.___W1__.__|.__
    Ba |.   .   .  |.
    .  |.   Ba  W1 |.
    .__|.___w___.__|Ba_
    .  |.   .   w  |.";
   
- Board board = new Board(strBoard);
- // writeln(Board.normStrBoard(strBoard));
- // writeln(board.toString());
- assert(board.toString() == Board.normStrBoard(strBoard));
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
 }
 
 // placing a peg
 
+unittest {
+
+ string inBoard =
+  ".__|.___W1__.__|.__
+   Ba |.   .   .  |.
+   .  |.   Ba  W1 |.
+   .__|.___.___.__|Ba_
+   .  |.   w   w  |.";
+  
+ string outBoard =
+  ".__|.___W1__.__|.__
+   Ba |.   .   .  |.
+   .  |.   Ba  W1 |.
+   .__|W2__.___.__|Ba_
+   .  |.   w   W2 |.";
+
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
+
+ // there is a peg already
+ auto placed = board.placePeg(22, Color.white);
+ assert(!placed);
+
+ // valid
+ placed = board.placePeg(16, Color.white);
+ assert(placed);
+ assert(board.toString() == Board.normStrBoard(outBoard));
+}
+
+// placing peg connects groups
+unittest {
+
+ string inBoard =
+  ".__|.___W1__.___.___.__|.__
+   .  |.   .   .   W1  W2 |. 
+   Ba |.   b   .   w   .  |.
+   .  |Bb  Ba  .   W2  .  |b
+   .  |.   .   .   .   .  |.
+   Bb_|.___w___.___W3__.__|.__
+   .  |.   W3  .   .   .  |.";
+
+ // white places peg
+ string outBoard1 =
+  ".__|.___W1__.___.___.__|.__
+   .  |.   .   .   W1  W2 |. 
+   Ba |.   b   .   w   .  |.
+   .  |Bb  Ba  W1  W2  .  |b
+   .  |.   .   .   .   .  |.
+   Bb_|.___W1__.___W1__.__|.__
+   .  |.   W1  .   .   .  |.";
+
+ // black places peg
+ string outBoard2 =
+  ".__|.___W1__.___.___.__|.__
+   .  |.   .   .   W1  W2 |. 
+   Ba |.   b   .   w   .  |.
+   .  |Bb  Ba  .   W2  .  |Ba
+   .  |.   .   .   Ba  .  |.
+   Bb_|.___w___.___W3__.__|.__
+   .  |.   W3  .   .   .  |.";
+
+ Board board = new Board(inBoard);
+ assert(board.toString() == Board.normStrBoard(inBoard));
+
+ // white
+ auto placed = board.placePeg(24, Color.white);
+ assert(placed);
+ assert(board.toString() == Board.normStrBoard(outBoard1));
+
+ board = new Board(inBoard);
+ // black
+ placed = board.placePeg(32, Color.black);
+ assert(placed);
+ assert(board.toString() == Board.normStrBoard(outBoard2));
+}
+
 // determining a winner
 
-
-/*
-  unittest { 
-    Board board = new Board(7);
-    auto f = (int x, int y) { return board.calcBridgeId(x, y); };
-    board.mPegs[Color.white][2] = 1;
-    board.mPegs[Color.white][12] = 1;
-    board.mPegs[Color.white][17] = 1;
-    board.mPegs[Color.white][22] = 1;
-    board.mPegs[Color.white][37] = 1;
-    board.mPegs[Color.white][46] = 1;
-
-    board.mBridges[f(2, 17)] = 1;
-    board.mBridges[f(17, 12)] = 1;
-    board.mBridges[f(17, 22)] = 1;
-    board.mBridges[f(22, 37)] = 1;
-    board.mBridges[f(37, 46)] = 1;
-
-    board.mPegs[Color.black][7] = 1;
-    board.mPegs[Color.black][11] = 1;
-    board.mPegs[Color.black][16] = 1;
-    board.mBridges[f(7, 16)] = 1;
-  }
-
-*/

@@ -15,6 +15,7 @@ import std.bitmanip : BitArray;
 import std.regex : match;
 import std.typecons : Tuple, tuple;
 
+import core.runtime;
 
 import logger;
 
@@ -23,7 +24,7 @@ private {
 }
 
 static this() {
-  lgr = new Logger(__FILE__, LogLevel.LL_DEBUG);
+  lgr = new Logger(__FILE__, LogLevel.LL_TRACE);
 }
 
 alias uint BridgeId;
@@ -129,10 +130,9 @@ public:
     // groupId -> list of pegs mapping
     int[][int] groups;
 
+    // load all the pegs/empty fields
     foreach (line; lines) {
       line = strip(line);
-
-      lgr.trace("parsing line(%s), peg(%s)", line, to!string(pos));
 
       if((line.length + 3) * 4 < 16)
         throw new BoardException("too short line"); 
@@ -170,7 +170,8 @@ public:
           if (color == Color.white) 
             groupId = to!int(s[1 .. $]);
           else
-            groupId = reduce!("a + to!int(b)")(0, s[1 .. $]);
+            // -1 to differentiate from white
+            groupId = -1 * reduce!("a + to!int(b)")(0, s[1 .. $]);
         } catch (ConvException) {
           throw new BoardException(format("invalid peg(%s) format - can't deduce group", pos));
         }
@@ -193,9 +194,9 @@ public:
 
     // find all potential bridges to be built
     foreach (group; groups)
-      // TODO rewrite with ranges
       for (int i = 0; i < group.length; i++) 
-        for (int j = i; j < group.length; j++)
+        for (int j = i + 1; j < group.length; j++)
+          // all pegs withing a group are of same color
           if (isBridgeShape(group[i], group[j]))
             allBridges ~= calcBridgeId(group[i], group[j]);
 
@@ -207,17 +208,20 @@ public:
           inCross[allBridges[j]] = 1;
         }
 
+    // place what can be placed
     foreach (bridge; allBridges) 
       if (bridge !in inCross) {
         enforce(tryPlaceBridge(bridge),
-        "can't place bridge considered placeable");
+          format("can't place bridge(%s) considered placeable", bridge));
       }
 
-    lgr.trace(format("loading board: bridges all(%s) bridges in cross(%s)",
-      allBridges, inCross));
+    lgr.trace("loading board: bridges all(%s) bridges in cross(%s)",
+      allBridges, inCross);
 
     // indicator of change
     int lastLen = 0;
+    // iteratively go through remaining bridges in cross
+    // remove from the list those which connect pegs in one group
     while (inCross.length && lastLen != inCross.length)
     {
       lastLen = inCross.length;
@@ -243,9 +247,10 @@ public:
         inCross.remove(bridge);
     }
     
+    // place the rest
     foreach (bridge, _; inCross)
       enforce(tryPlaceBridge(bridge),
-        "can't place bridge after in cross filter");
+        format("can't place bridge(%s) after in cross filter", bridge));
   }
 
   static string normStrBoard(string s) {
@@ -336,23 +341,31 @@ public:
     return to!string(strBoard);
   }
 
-  void placePeg(Coord coord, Color color) {
-    int pos1 = coord.getPos(mSize);
-    if(!isValidPeg(pos1, color))
-      return;
+  bool placePeg(Coord coord, Color color) {
+    return placePeg(coord.getPos(mSize), color);
+  }
+
+  bool placePeg(int pos, Color color) {
+    if(!isValidPeg(pos, color))
+    {
+      lgr.dbug("placing peg(%s) color(%s) invalid", pos, color);
+      return false;
+    }
+
+    lgr.dbug("placing peg(%s) color(%s)", pos, color);
 
     // place the peg
-    assert(pos1 > 0 && pos1 < mPegs[color].length);
-    mPegs[color][pos1] = 1;
+    assert(pos > 0 && pos < mPegs[color].length);
+    mPegs[color][pos] = 1;
     
     // build bridges
     foreach (off; mNgbOffsets) {
-      int pos2 = pos1 + off;
+      int ngb = pos + off;
 
-      if (!isValidPos(pos2, color))
+      if (!isValidPos(ngb, color) || !areSameColor(pos, ngb))
         continue;
       
-      BridgeId bid = calcBridgeId(pos1, pos2);
+      BridgeId bid = calcBridgeId(pos, ngb);
       assert(!hasBridge(bid));
 
       if (!canPlaceBridge(bid))
@@ -361,6 +374,8 @@ public:
       // place the bridge
       mBridges[bid] = 1;
     }
+
+    return true;
   }
 
   bool hasWinner() const {
@@ -383,49 +398,42 @@ private:
     return groups;
   }
 
+  // at the moment this function doesn't need to be fast
   int[int] buildPegGroupsByColor(Color color, uint nextGid = 1) const {
-    // pos -> groupId
+    // peg -> groupId
     int[int] groupIds; 
-    // groupId -> [pos]
-    int[][int] groups; 
+    BitArray visited;
+    visited.length = mSize * mSize;
 
+    BoardIter: 
     for (int i = 0; i < mPegs[color].length; i++) {
-      if(!mPegs[color][i] || !isValidPos(i, color))
+      if(!mPegs[color][i] || !isValidPos(i, color) || visited[i])
         continue;
-      auto ngbs = getConnectedPegs(i, color);
+      
+      int[] group = [i];
+      visited[i] = true;
 
-      lgr.trace("color(%s), peg(%s) connected pegs(%s)", color, i, ngbs);
-      if(!ngbs.length)
-        continue;
+      while (!group.empty) {
+        int peg = group.front();
 
-      groupIds[i] = nextGid;
-      groups[nextGid++] = [i];
+        lgr.trace("adding peg(%d) to group(%d) color(%s)", peg, nextGid, color);
 
-      // merge connected groups
-      foreach(ngb; ngbs) {
-        auto gid1 = groupIds[i];
-        if(ngb !in groupIds)
-        {
-          groupIds[ngb] = gid1;
-          groups[gid1] ~= ngb;
-          continue;
-        }
+        foreach(ngb; getConnectedPegs(peg, color))
+          if (!visited[ngb]) {
+            visited[ngb] = true;
+            group ~= ngb;
+          }
+        group.popFront();
 
-        auto gid2 = groupIds[ngb];
-        auto oldGid = gid1 < gid2 ? gid2 : gid1;
-        auto newGid = gid1 < gid2 ? gid1 : gid2;
-        auto oldGroup = groups[oldGid];
-        auto newGroup = groups[newGid];
-
-        // TODO optimize ?
-        foreach (oldMember; oldGroup)
-          groupIds[oldMember] = newGid;
-        groups[newGid] ~= groups[oldGid];
-        groups.remove(oldGid);
+        // don't store single pegs
+        if(peg == i && group.empty)
+          continue BoardIter;
+        groupIds[peg] = nextGid;
       }
+      nextGid++;
     }
     
-    lgr.dbug("building peg groups for color(%s) groupIds(%s)", color, groupIds);
+    lgr.trace("building peg groups for color(%s) groupIds(%s)", color, groupIds);
     return groupIds;
   }
 
@@ -475,6 +483,7 @@ private:
       if (ngb == (pos1 - pos2))
         found = true;
     assert(found);
+    assert(areSameColor(pos1, pos2));
   }
   body {
     // TODO more elegant ?
@@ -499,10 +508,6 @@ private:
       case 3 : off = 1 * mSize + 2; break;
     }
     return tuple(pos1, pos1 + off); 
-  }
-
-  // TODO
-  unittest {
   }
 
   bool canPlaceBridge(BridgeId bridge) const
@@ -537,11 +542,22 @@ private:
 
     foreach (off; mNgbOffsets) {
       if (isValidPos(pos + off, color) &&
+          areSameColor(pos, pos + off) &&
           hasBridge(calcBridgeId(pos, pos + off)))
         result ~= pos + off;
     }
 
     return result;
+  }
+
+  bool areSameColor(int pos1, int pos2) const 
+  out (result) {
+    if (result && mPegs[Color.white][pos1] == true) 
+      assert(mPegs[Color.black][pos1] == mPegs[Color.black][pos2]);
+  }
+  body
+  {
+    return mPegs[Color.white][pos1] == mPegs[Color.white][pos2];
   }
 
   bool isValidPeg(int pos, Color color) const {

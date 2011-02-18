@@ -6,3 +6,5 @@ D
 
   Get value from asoc array or default ?
 
+  Get stacktrace on exception and demangled names in gdb.
+

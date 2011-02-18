@@ -35,7 +35,7 @@ class Logger
   void trace(T...)(lazy string logString, T args)
   {
     if (mLogLevel <= LogLevel.LL_TRACE)
-      logWriter.writeToLog("TRACE", mLogModule, format(logString(), args));
+      logWriter.writeToLog("TRACE", mLogModule, format(logString(), args), true);
   }
 
   void dbug(T...)(lazy string logString, T args)
