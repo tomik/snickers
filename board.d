@@ -362,7 +362,7 @@ public:
     foreach (off; mNgbOffsets) {
       int ngb = pos + off;
 
-      if (!isValidPos(ngb, color) || !areSameColor(pos, ngb))
+      if (!isValidPos(ngb, color) || !mPegs[color][ngb])
         continue;
       
       BridgeId bid = calcBridgeId(pos, ngb);
@@ -532,6 +532,7 @@ private:
   int[] getConnectedPegs(int pos, Color color) const
   in {
     assert(isValidPos(pos, color));
+    assert(mPegs[color][pos]);
   }
   out(result) {
     foreach (connectedPos; result)
@@ -542,7 +543,7 @@ private:
 
     foreach (off; mNgbOffsets) {
       if (isValidPos(pos + off, color) &&
-          areSameColor(pos, pos + off) &&
+          mPegs[color][pos + off] &&
           hasBridge(calcBridgeId(pos, pos + off)))
         result ~= pos + off;
     }
@@ -561,7 +562,8 @@ private:
   }
 
   bool isValidPeg(int pos, Color color) const {
-    return isValidPos(pos, color) && !mPegs[color][pos] && color != Color.empty;
+    return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
+           !mPegs[Color.black][pos] && color != Color.empty;
   }
 
   bool isValidPos(int pos, Color color) const {
