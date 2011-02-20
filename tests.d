@@ -125,6 +125,44 @@ unittest {
   assert(board.toString() == Board.normStrBoard(outBoard));
 }
 
+// different peg connections
+unittest {
+
+  string inBoard =
+   ".__|.___.___.___.___.__|.__
+    .  |.   .   .   .   .  |.
+    .  |.   .   .   .   .  |.
+    .  |.   .   w   .   .  |.
+    .  |.   .   .   .   .  |.
+    .__|.___.___.___.___.__|.__
+    .  |.   .   .   .   .  |.";
+
+  string outBoard =
+   ".__|.___.___.___.___.__|.__
+    .  |.   W1  .   W1  .  |.
+    .  |W1  .   w   .   W1 |.
+    .  |.   w   W1  w   .  |.
+    .  |W1  .   w   .   W1 |.
+    .__|.___W1__.___W1__.__|.__
+    .  |.   .   .   .   .  |.";
+
+  Board board = new Board(inBoard);
+  assert(board.placePeg(9, Color.white));
+  assert(board.placePeg(11, Color.white));
+  assert(board.placePeg(15, Color.white));
+  assert(board.placePeg(17, Color.white));
+  assert(board.placePeg(19, Color.white));
+  assert(board.placePeg(23, Color.white));
+  assert(board.placePeg(25, Color.white));
+  assert(board.placePeg(29, Color.white));
+  assert(board.placePeg(31, Color.white));
+  assert(board.placePeg(33, Color.white));
+  assert(board.placePeg(37, Color.white));
+  assert(board.placePeg(39, Color.white));
+  assert(board.toString() == Board.normStrBoard(outBoard));
+}
+
+
 // placing peg connects groups
 unittest {
 

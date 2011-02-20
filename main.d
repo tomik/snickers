@@ -1,7 +1,6 @@
 
 import logger;
-import board;
-import std.stdio;
+import benchmarks : runBenchmarks;
 
 private { 
   Logger lgr; 
@@ -13,4 +12,5 @@ private {
 
 void main() {
   lgr.info("snickers started");
+  runBenchmarks();
 }

@@ -12,6 +12,7 @@ import std.stdio;
 import std.string;
 
 import std.bitmanip : BitArray;
+import std.math : abs;
 import std.regex : match;
 import std.typecons : Tuple, tuple;
 
@@ -24,7 +25,7 @@ private {
 }
 
 static this() {
-  lgr = new Logger(__FILE__, LogLevel.LL_TRACE);
+  lgr = new Logger(__FILE__, LogLevel.LL_INFO);
 }
 
 alias uint BridgeId;
@@ -52,6 +53,14 @@ enum Color {
   white,
   black,
   empty
+}
+
+Color flipColor(Color color) 
+in {
+  assert(color != Color.empty);
+}
+body {
+  return color == Color.white ? Color.black : Color.white;
 }
 
 enum Field {
@@ -114,6 +123,17 @@ public:
     // 4 oclock
     mSpoilOffsets[3] = [ -2 - 4 * (s - 2), -2 - 4 * (s - 1), -1 - 4 * s, -3 + 4 * 3, 
                          -3 + 4 * 2, -2 + 4 * 2, -1 + 4, -2 + 4, -3 + 4];
+  }
+
+  // copy constructor
+  this(Board board) {
+    this.mSize = board.mSize;
+    this.mPegs = board.mPegs;
+    this.mBridges = board.mBridges;
+
+    // TODO static ?
+    this.mNgbOffsets = board.mNgbOffsets;
+    this.mSpoilOffsets = board.mSpoilOffsets;
   }
 
   /** Loads the board from snickers string format. */
@@ -371,6 +391,10 @@ public:
       if (!canPlaceBridge(bid))
         continue;
 
+      // special case to prevent "cylinder like" connections
+      if (abs(pos % mSize - ngb % mSize) > 2)
+        continue;
+
       // place the bridge
       mBridges[bid] = 1;
     }
@@ -389,6 +413,10 @@ public:
     return Color.empty;
   }
 
+  int getSize() const {
+    return mSize;
+  }
+
 private:
 
   bool checkWinner(Color color) const {
@@ -399,8 +427,10 @@ private:
     int limit = color == Color.white ? mSize : mSize * mSize;
 
     for (int i = 0; i < limit; i += off) {
-      if(!mPegs[color][i] || !isValidPos(i, color) || visited[i])
+      if(!mPegs[color][i] || visited[i])
         continue;
+
+      assert(isValidPos(i, color));
       
       // faster ?
       int[] group = [i];
@@ -520,6 +550,8 @@ private:
       if (ngb == (pos1 - pos2))
         found = true;
     assert(found);
+    assert((isValidPos(pos1, Color.white) && isValidPos(pos2, Color.white)) ||
+           (isValidPos(pos1, Color.black) && isValidPos(pos2, Color.black)));
     assert(areSameColor(pos1, pos2));
   }
   body {
@@ -610,6 +642,10 @@ private:
     int x = pos % mSize; 
     int y = pos / mSize;
 
+    // watchout: if pos == mSize then  x == 0 !
+    if (pos < 0 || pos >= mSize * mSize)
+      return false;
+
     // trivial (no edges) + within ranges
     if (x > 0 && x < mSize - 1 && y > 0 && y < mSize - 1)
       return true;
@@ -633,6 +669,8 @@ private:
     assert(b.isValidPos(18, Color.white) == false);
     assert(b.isValidPos(-1, Color.black) == false);
     assert(b.isValidPos(18, Color.black) == false);
+    assert(b.isValidPos(16, Color.white) == false);
+    assert(b.isValidPos(16, Color.black) == false);
     // corners
     assert(b.isValidPos(0, Color.white) == false);
     assert(b.isValidPos(0, Color.black) == false);
