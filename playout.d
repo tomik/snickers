@@ -6,7 +6,7 @@
 import std.array : empty, front, popFront;
 import std.stdio;
 import std.datetime : systime;
-import std.random : Mt19937, randomShuffle;
+import std.random : Random, randomShuffle;
 import std.math : floor;
 import std.conv : to;
 
@@ -20,7 +20,7 @@ private {
 }
 
 static this() {
-  lgr = new Logger(__FILE__, LogLevel.LL_DEBUG);
+  lgr = new Logger(__FILE__, LogLevel.LL_INFO);
 }
 
 /// UCT doesn't care where does the evaluation come from
@@ -35,16 +35,15 @@ interface IEvaluator {
 class SimplePlayout : IEvaluator {
 
 public:
-  this (Board board, int maxLength, ref Mt19937 gen) {
+  this (Board board, int maxLength, ref Random gen) {
     mBoard = new Board(board);
     mMaxLength = maxLength;
-    mFieldsNum = mBoard.getSize() * mBoard.getSize(); 
+    mFieldsNum = mBoard.getSize() * mBoard.getSize();
     mGenerator = &gen;
     mMoves.length = mFieldsNum;
     foreach(i; 0 .. mFieldsNum - 1)
       mMoves[i] = i;
     randomShuffle(mMoves, *mGenerator);
-    // mGenerator.seed(seed); //systime().toMilliseconds!long));
   }
 
   override double evaluate() {
@@ -63,8 +62,7 @@ public:
 
     auto winner = mBoard.getWinner();
 
-    //lgr.dbug("playout finished: winner(%s)", winner);
-    // writefln("playout finished: winner(%s)", winner);
+    lgr.dbug("playout finished: winner(%s)", winner);
 
     switch (winner) {
       case Color.white: return -1;
@@ -74,6 +72,7 @@ public:
   }
 
 private:
+  // select move and play
   // returns true if step was performed
   bool step(Color color, uint stepNum) {
     // super simplified
@@ -83,7 +82,6 @@ private:
     int peg = mMoves.front();
     mMoves.popFront();
 
-    // select move and play
     lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
         stepNum, color, peg);
 
@@ -102,7 +100,7 @@ private:
   Board mBoard;
 
   // Mersenne Twister engine with predefined values
-  Mt19937* mGenerator;
+  Random* mGenerator;
 
   // number of fields on the board used for move generation
   int mFieldsNum;

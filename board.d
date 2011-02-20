@@ -63,14 +63,6 @@ body {
   return color == Color.white ? Color.black : Color.white;
 }
 
-enum Field {
-  white,
-  black,
-  empty,
-  none
-}
-
-
 /** Helper function to create a "set" from an array.*/
 bool[T] toAssoc(T)(T[] elems) {
   bool[T] res;
@@ -361,6 +353,11 @@ public:
     return to!string(strBoard);
   }
 
+  bool isValidPeg(int pos, Color color) const {
+    return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
+           !mPegs[Color.black][pos] && color != Color.empty;
+  }
+
   bool placePeg(Coord coord, Color color) {
     return placePeg(coord.getPos(mSize), color);
   }
@@ -628,11 +625,6 @@ private:
   body
   {
     return mPegs[Color.white][pos1] == mPegs[Color.white][pos2];
-  }
-
-  bool isValidPeg(int pos, Color color) const {
-    return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
-           !mPegs[Color.black][pos] && color != Color.empty;
   }
 
   bool isValidPos(int pos, Color color) const {

@@ -125,6 +125,28 @@ unittest {
   assert(board.toString() == Board.normStrBoard(outBoard));
 }
 
+// check that black can't connect from left to right directly
+unittest {
+
+  string inBoard =
+   ".__|.___.___.__|.__
+    b  |.   .   .  |.
+    b  |b   .   .  |.
+    b__|.___.___.__|.__
+    .  |.   .   .  |.";
+
+  string outBoard =
+   ".__|.___.___.__|.__
+    b  |.   .   .  |.
+    b  |b   .   .  |b
+    b__|.___.___.__|.__
+    .  |.   .   .  |.";
+
+  Board board = new Board(inBoard);
+  assert(board.placePeg(14, Color.black));
+  assert(board.toString() == Board.normStrBoard(outBoard));
+}
+
 // different peg connections
 unittest {
 
