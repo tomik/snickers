@@ -40,23 +40,22 @@ public:
     mMaxLength = maxLength;
     mFieldsNum = mBoard.getSize() * mBoard.getSize();
     mGenerator = &gen;
-    mMoves.length = mFieldsNum;
-    foreach(i; 0 .. mFieldsNum - 1)
-      mMoves[i] = i;
-    randomShuffle(mMoves, *mGenerator);
+    mEmptyPos.length = mFieldsNum;
+    foreach (i; 0 .. mFieldsNum - 1)
+      mEmptyPos[i] = i;
+    randomShuffle(mEmptyPos, *mGenerator);
   }
 
+  static string getName() { return "simplePlayout"; } 
+
+  int[] getMoves() { return []; } 
+
   override double evaluate() {
-    // TODO get color to start
     Color color = Color.white; 
-    for(int i = 0; i < mMaxLength; i++) {
-      if(step(color, i)) 
-      {
+    for (int i = 0; i < mMaxLength; i++) {
+      if (step(color, i)) {
         color = flipColor(color);
         // writeln(mBoard.toString());
-      }
-      else {
-        (*mGenerator).popFront();
       }
     }
 
@@ -77,13 +76,13 @@ private:
   bool step(Color color, uint stepNum) {
     // super simplified
     // int peg = to!int(floor((*mGenerator).front()) % mFieldsNum);
-    if (mMoves.empty)
+    if (mEmptyPos.empty)
       return false;
-    int peg = mMoves.front();
-    mMoves.popFront();
+    int peg = mEmptyPos.front();
+    mEmptyPos.popFront();
 
-    lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
-        stepNum, color, peg);
+    debug { lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
+        stepNum, color, peg); }
 
     return mBoard.placePeg(peg, color);
   };
@@ -106,6 +105,271 @@ private:
   int mFieldsNum;
 
   // all the moves that can be played
-  int[] mMoves;
+  int[] mEmptyPos;
 }
+
+/**
+ * Playout evaluator that is orientied on Building Bridges.
+ *
+ * It plays couple of first moves randomly and then biases moves to places pegs
+ * forming a bridge from a previously placed peg.
+ */
+
+// TODO extract common patterns with SimplePlayout to a father class
+class BBPlayout : IEvaluator {
+
+public:
+  this (Board board, int maxLength, ref Random gen) {
+    mBoard = new Board(board);
+    mMaxLength = maxLength;
+    mGenerator = &gen;
+    mInitialLength = 10;
+
+    // used heuristics
+    mHeurs.length = 2;
+    mHeurs[0] = new NaivePathHeur(0);
+    mHeurs[1] = new RandomHeur(1);
+  }
+
+  static string getName() { return "bbPlayout"; } 
+
+  /// Retrieve moves after finished playout
+  int[] getMoves() { return mMoves; } 
+
+  override double evaluate() {
+    // TODO get color to start
+    Color color = Color.white; 
+    // this is out parameter for stepFromLast and step
+    int peg;
+
+    // clean up and generalize this code (i.e. random-weighted elements)
+    // how to handle shared datastructures in steps ? lastmove/active/etc.
+
+    // in the beginning just throw couple of stones
+    for (int i = 0; i < mInitialLength; i++) {
+      // random step heur
+      Heur heur = mHeurs[1];
+      bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
+      debug { writefln("%s step by %s: step(%d) color(%s) peg(%s)",
+      getName(), heur.getName(), i, color, peg); }
+
+      {
+        mLastMove[color] = peg;
+        mLastHeur[color] = 1;
+        mMoves ~= peg;
+        color = flipColor(color);
+        debug { writeln(mBoard.toString()); }
+      }
+    }
+
+    for (int i = 0; i < mMaxLength - mInitialLength; i++) {
+      foreach(hid, heur; mHeurs)
+      {
+        // TODO check if heuristic is to be applied based on weight
+        
+        bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
+        debug { writefln("%s step by %s: step(%d) color(%s) peg(%s)",
+        getName(), heur.getName(), i, color, peg); }
+
+        if (placed)
+        {
+          mLastMove[color] = peg;
+          mLastHeur[color] = hid;
+          mMoves ~= peg;
+          color = flipColor(color);
+          debug { writeln(mBoard.toString()); }
+          break;
+        }
+      }
+    }
+
+    auto winner = mBoard.getWinner();
+
+    lgr.dbug("playout finished: winner(%s)", winner);
+
+    switch (winner) {
+      case Color.white: return -1;
+      case Color.black: return 1;
+      case Color.empty: return 0;
+    }
+  }
+
+private:
+
+  uint mMaxLength;
+  uint mInitialLength;
+
+  Board mBoard;
+
+  Random* mGenerator;
+
+  Heur mHeurs[]; 
+
+  // state information by color
+  int mLastMove[2];
+  int mLastHeur[2];
+
+  // ordered list of moves in playout 
+  int mMoves[];
+}
+
+/**
+ * Heuristics are used to select moves in the playouts.
+ * Typically there is more of them and playout selects a subset
+ * of these to be applied for a particular move.
+ * Heuristics don't have direct access to playouts state all their
+ * inputs are coming as arguments of apply method. 
+ */
+
+class Heur {
+  public:
+    abstract string getName();
+
+    /**
+     * Tries to find a move based on particular heuristic logic.
+     * Returns: Whether a playable move was found. 
+     * 
+     * This is not a pure function because random generator state is altered.
+     */
+    abstract bool apply(
+      Color color,
+      uint stepNum,
+      int[2] lastMove,
+      int[2] lastHeur,
+      ref Board,
+      ref Random gen,
+      out int peg);
+
+    this(int hid) {
+      mHid = hid;
+    }
+
+  protected: 
+    int mHid;
+}
+
+/**
+ * Heuristic for naive path building.
+ * From a starting point tries to extend the path into
+ * predefined direction.
+ */
+
+class NaivePathHeur : Heur {
+
+public:
+  this(int hid) { 
+    super(hid);
+  }
+  
+  override string getName() { return "NaivePathHeur"; }
+
+  override bool apply(
+    Color color,
+    uint stepNum,
+    int[2] lastMove,
+    int[2] lastHeur,
+    ref Board board,
+    ref Random gen,
+    out int peg) {
+
+    int start;
+    auto size = board.getSize();
+    
+    if(lastHeur[color] == mHid) {
+      // continue in the naive path 
+      start = lastMove[color];
+    }
+    else {
+      // start a new naive path
+      mRightOrDown[color] = gen.front() % 2 ? false : true;
+      gen.popFront();
+
+      // selects point on one of the edges
+      auto off = gen.front() % (size - 1);
+      gen.popFront();
+      if (color == Color.white) {
+        start = mRightOrDown[color] ? off : board.getFieldsNum() - 1 - off;
+      } else {
+        start = mRightOrDown[color] ? size * off : size * off + size - 1;
+      }
+    }
+
+    peg = board.getPeerByStupidPath(start, color, mRightOrDown[color], gen);
+
+    return board.placePeg(peg, color);
+  }
+
+private:
+  bool mRightOrDown[2];
+
+}
+
+/**
+ * Simplest heuristic selecting a random move to play;
+ */
+class RandomHeur : Heur {
+
+public:
+  this(int hid) { 
+    super(hid);
+  }
+
+  override string getName() { return "RandomHeur"; }
+
+  override bool apply(
+    Color color,
+    uint stepNum,
+    int[2] lastMove,
+    int[2] lastHeur,
+    ref Board board,
+    ref Random gen,
+    out int peg) {
+
+    peg = to!int(floor(gen.front()) % board.getFieldsNum());
+    gen.popFront();
+
+    return board.placePeg(peg, color);
+  }
+}
+
+/**
+ * Heuristic selecting a random bridge from last played move by that player.
+ */
+class BridgeHeur : Heur {
+
+public:
+  this(int hid) { 
+    super(hid);
+  }
+
+  override string getName() { return "BridgeHeur"; }
+
+  override bool apply(
+    Color color,
+    uint stepNum,
+    int[2] lastMove,
+    int[2] lastHeur,
+    ref Board board,
+    ref Random gen,
+    out int peg) {
+
+    if (lastMove[color] == 0)
+      return false;
+
+    peg = board.getPeerByRandom(lastMove[color], color, gen);
+
+    return board.placePeg(peg, color);
+  }
+}
+
+  //bool stepByDirection(Color color, uint stepNum, ref int peg) {
+    //if (mLastMove[color] == 0)
+      //return false;
+    //peg = mBoard.getPeerByDirection(mLastMove[color], color, *mGenerator);
+
+    //debug { writefln("bb playouter step by direction: step(%d) color(%s) peg(%s)",
+        //stepNum, color, peg); }
+
+    //return mBoard.placePeg(peg, color);
+  //}
 

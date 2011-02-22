@@ -1,6 +1,9 @@
 
 better logging mechanism
 
+Playouts
+  replace last move with list of moves
+
 D
   Is there a python-like list comprehension idiom ?
 

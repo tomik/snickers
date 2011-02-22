@@ -184,7 +184,6 @@ unittest {
   assert(board.toString() == Board.normStrBoard(outBoard));
 }
 
-
 // placing peg connects groups
 unittest {
 

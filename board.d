@@ -13,6 +13,7 @@ import std.string;
 
 import std.bitmanip : BitArray;
 import std.math : abs;
+import std.random : Random;
 import std.regex : match;
 import std.typecons : Tuple, tuple;
 
@@ -98,7 +99,7 @@ public:
     mPegs[1].length = mSize * mSize;
     mBridges.length = mSize * mSize * 4;
     mNgbOffsets = [ -2 - mSize, -1 - 2 * mSize, 1 - 2 * mSize, 2 - mSize, 
-                    -2 + mSize, -1 + 2 * mSize, 1 + 2 * mSize, 2 + mSize];
+                     2 + mSize, 1 + 2 * mSize, -1 + 2 * mSize, -2 + mSize];
 
     // only 4 orientations (denoted by clock times) taken into account
     // there are obvious symmetries between 7, 5 oclock and 8, 4 oclock
@@ -108,10 +109,10 @@ public:
                          3 - 4 * 2, 2 - 4 * 2, 1 - 4, 2 - 4, 3 - 4];
     // 7 oclock
     mSpoilOffsets[1] = [ 1 - 4 * (s + 1), 2 - 4 * 2, 2 - 4, 1 - 4, -1 + 4,
-                         2 + 4 * (s - 2), 2 + 4 * (s - 1), 1 + 4 * (size - 1), -1 + 4 * size];
+                         2 + 4 * (s - 2), 2 + 4 * (s - 1), 1 + 4 * (s - 1), -1 + 4 * s];
     // 5 oclock
     mSpoilOffsets[2] = [ -1 - 4 * (s - 1), -2 + 4 * 2, -2 + 4, -1 + 4, 1 - 4,
-                         -2 + 4 * (s + 2), -2 + 4 * (s + 1), -1 + 4 * (size + 1), 1 + 4 * size];
+                         -2 + 4 * (s + 2), -2 + 4 * (s + 1), -1 + 4 * (s + 1), 1 + 4 * s];
     // 4 oclock
     mSpoilOffsets[3] = [ -2 - 4 * (s - 2), -2 - 4 * (s - 1), -1 - 4 * s, -3 + 4 * 3, 
                          -3 + 4 * 2, -2 + 4 * 2, -1 + 4, -2 + 4, -3 + 4];
@@ -120,12 +121,13 @@ public:
   // copy constructor
   this(Board board) {
     this.mSize = board.mSize;
-    this.mPegs = board.mPegs;
-    this.mBridges = board.mBridges;
+    this.mPegs[0] = board.mPegs[0].dup;
+    this.mPegs[1] = board.mPegs[1].dup;
+    this.mBridges = board.mBridges.dup;
 
     // TODO static ?
-    this.mNgbOffsets = board.mNgbOffsets;
-    this.mSpoilOffsets = board.mSpoilOffsets;
+    this.mNgbOffsets = board.mNgbOffsets.dup;
+    this.mSpoilOffsets = board.mSpoilOffsets.dup;
   }
 
   /** Loads the board from snickers string format. */
@@ -414,6 +416,63 @@ public:
     return mSize;
   }
 
+  int getFieldsNum() const {
+    return mSize * mSize;
+  }
+
+  // analyzer part - TODO put this aside to another object
+
+  Color getPosColor(int pos) const {
+    if (mPegs[Color.white][pos])
+      return Color.white;
+
+    if (mPegs[Color.black][pos])
+      return Color.black;
+
+    return Color.empty;
+  }
+
+  int getPeerByRandom(int pos, Color color, ref Random gen) const {
+    int peer = gen.front() % 8;
+    gen.popFront();
+    return mNgbOffsets[peer] + pos;
+  }
+
+  int getPeerByDirection(int pos, Color color, ref Random gen) const {
+    int peer = gen.front() % 8;
+    gen.popFront();
+    if (color == Color.white) {
+      peer = pos / mSize < mSize / 2 ? 4 + peer % 4 : peer % 4;
+    }
+    else {
+      assert(color == Color.black);
+      uint off = pos % mSize < mSize / 2 ? 4 : 0; 
+      peer = peer < 2 || peer > 5 ? (peer + off) % 8: (peer + 4 - off) % 8;
+    }
+    return mNgbOffsets[peer] + pos;
+  }
+  
+  int getPeerByStupidPath(int pos, Color color, bool rightOrDown, ref Random gen) const {
+
+    if (getPosColor(pos) == color.empty)
+      return pos; 
+
+    static int[4] where[4] = 
+      [ 
+        [0, 1, 2, 3], // white up
+        [0, 1, 6, 7], // black left 
+        [4, 5, 6, 7], // white down
+        [2, 3, 4, 5], // black right
+      ];
+
+    auto dirs = where[color + 2 * rightOrDown];
+    auto index = dirs[gen.front() % 4];
+    gen.popFront();
+    auto peer = mNgbOffsets[index] + pos;
+
+    return peer;
+  }
+
 private:
 
   bool checkWinner(Color color) const {
@@ -581,9 +640,11 @@ private:
     assert(!hasBridge(bridge));
   }
   body {
-    foreach (spoilOffset; mSpoilOffsets[getBridgeType(bridge)])
-      if (hasBridge(bridge + spoilOffset))
+    foreach (spoilOffset; mSpoilOffsets[getBridgeType(bridge)]) {
+      BridgeId spoiler = bridge + spoilOffset;
+      if (hasBridge(spoiler) && spoiler >= 0 && spoiler < mBridges.length)
         return false;
+    }
       
     return true;
   }
@@ -607,6 +668,7 @@ private:
   body {
     int[] result;
 
+    // TODO check that 
     foreach (off; mNgbOffsets) {
       if (isValidPos(pos + off, color) &&
           mPegs[color][pos + off] &&
@@ -627,17 +689,20 @@ private:
     return mPegs[Color.white][pos1] == mPegs[Color.white][pos2];
   }
 
+  // doesn't cover special cases of top left and bottom right corner
+  // that is ok since these happen little and are eliminated in isValidPos
+  bool isOnBoard(int pos) const {
+    return pos >= 1 && pos < mSize * mSize;
+  }
+
   bool isValidPos(int pos, Color color) const {
-    if(pos < 0)
+    if (pos <= 0 || pos >= mSize * mSize)
       return false;
 
     int x = pos % mSize; 
     int y = pos / mSize;
 
     // watchout: if pos == mSize then  x == 0 !
-    if (pos < 0 || pos >= mSize * mSize)
-      return false;
-
     // trivial (no edges) + within ranges
     if (x > 0 && x < mSize - 1 && y > 0 && y < mSize - 1)
       return true;
