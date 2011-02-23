@@ -7,44 +7,13 @@ import std.stdio;
 import board;
 import playout : SimplePlayout, BBPlayout;
 
-debug { 
- import std.algorithm : joiner;
- import std.file : File;
- import std.range : cycle, zip;
- import std.string : replace;
-
- import utils : pegToJsonStr;
-}
-
 void runBenchmarks() {
   int seed = unpredictableSeed();
   Random gen = Random(seed);
-  debug { writefln("generator seed is %s", seed); }
-
-  // this piece of code plays one game on large board with bbplayout
-  // and then dumps the moves into view_game.html template
-  debug { 
-   Board board = new Board(24);
-   BBPlayout playout = new BBPlayout(board, 75, gen); 
-   auto res = playout.evaluate();
-   auto moves = playout.getMoves();
-   string pegsJsonStr[];
-   foreach (t; zip(moves, cycle([Color.white, Color.black])))
-     pegsJsonStr ~= pegToJsonStr(t[0] % board.getSize(), t[0] / board.getSize(), t[1]);
-   auto jsonPlayoutStr = "[" ~ to!string(joiner(pegsJsonStr, ", ")) ~ "]";
-   // template for viewing page
-   string t = "<script type='text/javascript'> <!-- \n"
-              "window.location = 'file:///home/tomik/src/javascript/twixt/twixt.html?record={record}' \n"
-              "//--> \n </script>";
-   auto f = File("view_game.html", "w");
-   f.write(t.replace("{record}", jsonPlayoutStr));
-  } 
-  else {
-   playoutBenchmark!(BBPlayout)(gen, 10000, 24, 90, "large board");
-   playoutBenchmark!(BBPlayout)(gen, 10000, 7, 45, "small board");
-   playoutBenchmark!(SimplePlayout)(gen, 10000, 24, 200, "large board");
-   playoutBenchmark!(SimplePlayout)(gen, 10000, 7, 100, "small board");
-  }
+  playoutBenchmark!(BBPlayout)(gen, 10000, 24, 90, "large board");
+  playoutBenchmark!(BBPlayout)(gen, 10000, 7, 45, "small board");
+  playoutBenchmark!(SimplePlayout)(gen, 10000, 24, 200, "large board");
+  playoutBenchmark!(SimplePlayout)(gen, 10000, 7, 100, "small board");
 }
 
 void playoutBenchmark(Playout)(Random gen, uint playoutsNum, uint boardSize, uint playoutLen, string comment) {

@@ -1,6 +1,8 @@
 
 /** 
- * Twixt board representation.
+ * Twixt board representation. 
+ * Focus is on very lightweight representation with small memory footprint for
+ * cache friendly processing during search and playouts.
  */
 
 import std.algorithm;
@@ -29,25 +31,71 @@ static this() {
   lgr = new Logger(__FILE__, LogLevel.LL_INFO);
 }
 
+class BoardException : Exception {
+  public this(string s) {
+    super(s);
+  }
+};
+
 alias uint BridgeId;
 
-/// Coordinates starting in bottom left corner
-struct Coord {
-  int x;
-  int y;
+/** 
+ * Friendly peg abstraction for outer world. Can be loaded from and dumped to string.
+ * Peg string representation is colRow where col is a-z,aa-.. row is 1-..
+ * For white is col lower case, for black upper case (Big).
+ */
+struct Peg {
+  int mCol;
+  int mRow;
+  Color mColor;
 
-  this(int x, int y) {
-    this.x = x;
-    this.y = y;
+  this(int x, int y, Color color) {
+    this.mCol = x;
+    this.mRow = y;
+    this.mColor = color;
   }
 
-  // not optimized - mostly for testing
-  static Coord fromPos(int pos, int boardSize) { 
-    return Coord(pos % boardSize, pos/boardSize);
+  this(const char[] pegStr) {
+    try {
+      auto i = 0;
+      while (isalpha(pegStr[i])){
+        this.mCol *= 26;
+        this.mCol += tolower(pegStr[i]) - 'a';
+        
+        Color c = islower(pegStr[i]) ? Color.white : Color.black;
+        if (i == 0)
+          this.mColor = c;
+        if (this.mColor != c)
+          throw new Exception("");
+        i++;
+      }
+      this.mRow = to!int(pegStr[i .. $]) - 1;
+    }
+    catch (Exception e) {
+      throw e;
+      throw new BoardException(format("invalid peg representation(%s)", pegStr));
+    }
   }
 
-  int getPos(int size)
-  { return x + y * size;} 
+  string toString() {
+    char[] s;
+    int col = mCol + 1;
+    int row = mRow + 1;
+
+    while (col > 0) {
+      s ~= 'a' + (col - 1) % 26;
+      col /= 26;
+    }
+
+    if (mColor == Color.black)
+      toupperInPlace(s);
+    s ~= to!(char[])(row);
+    return to!string(s);
+  }
+  
+  int getPos(int size) const { 
+    return mCol + mRow * size;
+  } 
 }
 
 enum Color {
@@ -82,12 +130,6 @@ string stripLines(string s) {
       cBoard ~= "\n" ~ strip(line);
   return to!string(strip(cBoard));
 }
-
-class BoardException : Exception {
-  public this(string s) {
-    super(s);
-  }
-};
 
 class Board {
 
@@ -360,8 +402,10 @@ public:
            !mPegs[Color.black][pos] && color != Color.empty;
   }
 
-  bool placePeg(Coord coord, Color color) {
-    return placePeg(coord.getPos(mSize), color);
+  // this is to be used by "outer world" therefore exception
+  void placePeg(Peg peg) {
+    if(!placePeg(peg.getPos(mSize), peg.mColor))
+      throw new BoardException(format("can't play invalid peg(%s)", peg.toString()));
   }
 
   bool placePeg(int pos, Color color) {

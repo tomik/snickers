@@ -362,14 +362,39 @@ public:
   }
 }
 
-  //bool stepByDirection(Color color, uint stepNum, ref int peg) {
-    //if (mLastMove[color] == 0)
-      //return false;
-    //peg = mBoard.getPeerByDirection(mLastMove[color], color, *mGenerator);
+import std.algorithm : joiner;
+import std.file : File;
+import std.random : unpredictableSeed;
+import std.range : cycle, zip;
+import std.string : replace;
 
-    //debug { writefln("bb playouter step by direction: step(%d) color(%s) peg(%s)",
-        //stepNum, color, peg); }
+import utils : pegToJsonStr;
 
-    //return mBoard.placePeg(peg, color);
-  //}
+
+/** Plays one game on large board with bbplayout 
+ * and then dumps the moves into view_game.html template
+ */
+void runExamplePlayout() {
+
+  int seed = unpredictableSeed();
+  Random gen = Random(seed);
+  writefln("generator seed is %s", seed);
+
+  Board board = new Board(24);
+  BBPlayout playout = new BBPlayout(board, 75, gen); 
+  auto res = playout.evaluate();
+  auto moves = playout.getMoves();
+  string pegsJsonStr[];
+
+  foreach (t; zip(moves, cycle([Color.white, Color.black])))
+    pegsJsonStr ~= pegToJsonStr(t[0] % board.getSize(), t[0] / board.getSize(), t[1]);
+
+  auto jsonPlayoutStr = "[" ~ to!string(joiner(pegsJsonStr, ", ")) ~ "]";
+  // template for viewing page
+  string t = "<script type='text/javascript'> <!-- \n"
+             "window.location = 'file:///home/tomik/src/javascript/twixt/twixt.html?record={record}' \n"
+             "//--> \n </script>";
+  auto f = File("view_game.html", "w");
+  f.write(t.replace("{record}", jsonPlayoutStr));
+} 
 
