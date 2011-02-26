@@ -1,6 +1,6 @@
 
 all:
-	dmd *d -gc -unittest -ofsnickers
+	dmd *d -gc -debug -unittest -ofsnickers
 	./snickers
 
 dbg:

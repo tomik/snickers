@@ -70,9 +70,7 @@ struct Peg {
         i++;
       }
       this.mRow = to!int(pegStr[i .. $]) - 1;
-    }
-    catch (Exception e) {
-      throw e;
+    } catch (Exception e) {
       throw new BoardException(format("invalid peg representation(%s)", pegStr));
     }
   }

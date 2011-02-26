@@ -6,13 +6,24 @@
  * Protocol is named TEI (Twixt Engine Interface)
  */
 
-import std.conv : to;
 import std.array : empty;
+import std.concurrency;
+import std.conv : to, ConvException;
+import std.exception;
 import std.stdio;
 import std.string : indexOf, format, split, strip;
+import core.thread : sleep, Thread;
+import std.variant : Variant;
 
 import board : Board, BoardException, Peg;
+import engine : Engine;
 import types : SystemExit;
+
+class ActionException : Exception {
+  this(string s) {
+    super(s);
+  }
+}
 
 class Control {
 
@@ -37,7 +48,7 @@ class Control {
   }
   
   this() {
-    mRecords ~= Record(State.any, "ping", State.same, () {send("ok");});
+    mRecords ~= Record(State.any, "ping", State.same, () {output("ok");});
     // creates new game, arguments are expected to be cols rows (default 24 24)
     mRecords ~= Record(State.init, "newgame", State.game, () {newGame();}, &this.newGame);
     mRecords ~= Record(State.game, "newgame", State.game, () {newGame();}, &this.newGame);
@@ -53,8 +64,10 @@ class Control {
     mRecords ~= Record(State.game, "go", State.search, &this.startSearch);
     // stop current search and output best move so far
     mRecords ~= Record(State.search, "stop", State.game, &this.stopSearch);
-    mRecords ~= Record(State.any, "quit", State.same, () {send("bye"); throw new SystemExit();});
-    mRecords ~= Record(State.game, "getboard", State.game, () {send(mBoard.toString());});
+    mRecords ~= Record(State.any, "quit", State.same, () {output("bye"); throw new SystemExit();});
+    mRecords ~= Record(State.game, "getboard", State.game, () {output(mBoard.toString());});
+    mRecords ~= Record(State.search, "getbest", State.search, &this.getBestMove);
+    mRecords ~= Record(State.game, "getpv", State.game, &this.getPV);
     // TODO
     mRecords ~= Record(State.game, "getsgf", State.game, () {;});
 
@@ -65,6 +78,7 @@ class Control {
     char[] buf;
     // TODO only in command-line mode - without control file
     write("> ");
+
     while (readln(buf)) {
       dispatch(strip(buf));
       write("> ");
@@ -76,9 +90,9 @@ class Control {
     int index = indexOf(line, ' ');
     const char[] cmd = strip(index == -1 ? line : line[0 .. index]);
     const char[] args = strip(index == -1 ? "" : line [index + 1 .. $]);
-
     // select record
     Record *record = null;
+
     foreach (r; mRecords) {
       if (r.mCommand == cmd &&
          (mState == r.mState || r.mState == State.any)) {
@@ -102,53 +116,91 @@ class Control {
       return;
     }
 
-    // perform action
-    if (args.empty) 
-      record.mNoArgsAction();
-    else
-      record.mArgsAction(args);
+    try {
+      // perform action
+      if (args.empty) 
+        record.mNoArgsAction();
+      else
+        record.mArgsAction(args);
+    } catch (ActionException e){
+      // no state change on action excception
+      log(e.msg);
+    }
     
     // update state 
     if (record.mNewState != State.same) 
       mState = record.mNewState; 
   }
 
-  void send(string msg) {
-    writeln(msg);
+  void output(string msg) {
+    writeln("  " ~ msg);
   }
 
   void log(string s) {
-    writeln("log " ~ s);
+    output("log " ~ s);
   }
 
   // handlers
   
   void newGame(const char[] sizeStr = "24") {
-    // TODO return false when can't convert
-    int size = to!int(sizeStr);
+    int size;
+    try {
+      size = to!int(sizeStr);
+    } catch (ConvException) {
+      throw new ActionException(format("can't parse board size from str %s", sizeStr));
+    }
     mBoard = new Board(size);
   }
 
   void play(const char[] moves) {
+    Peg[] pegs;
     try {
       foreach (pegStr; split(moves)) {
-        Peg* peg = new Peg(pegStr); 
-        mBoard.placePeg(*peg);
+        pegs ~= Peg(pegStr); 
       }
     } catch (BoardException e) {
-      log(e.msg);
+      throw new ActionException(e.msg);
     }
+
+    // atomicity - all the pegs are played after successful parsing
+    foreach (peg; pegs)
+      mBoard.placePeg(peg);
   }
   
   void startSearch() {
+    mSearchTid = spawnLinked(&startSearchInThread);
+    log("search started");
   }
 
   void stopSearch() {
+    getBestMove();
+    // join the thread
+    mSearchTid.send(thisTid, "stop");
+    auto msg = receiveOnly!LinkTerminated();
+    log("done searching");
+  }
+
+  void getBestMove() {
+    mSearchTid.send(thisTid, "bestmove");
+    auto peg = receiveOnly!Peg();
+    log(format("best move is %s", peg));
+  }
+
+  void getPV() {
+  }
+  
+  static void startSearchInThread() {
+    Engine engine = new Engine();
+    engine.search();
   }
 
   private:
     State mState;
     Record mRecords[];
 
+    // handler part
     Board mBoard;
+    Tid mSearchTid;
 }
+
+
