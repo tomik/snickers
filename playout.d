@@ -13,7 +13,7 @@ import std.conv : to;
 import std.c.time : clock;
 
 import logger;
-import board: Board, Color, flipColor;
+import board: Board, Color, flipColor, Peg;
 
 private {
   Logger lgr;
@@ -23,24 +23,21 @@ static this() {
   lgr = new Logger(__FILE__, LogLevel.LL_INFO);
 }
 
-/// UCT doesn't care where does the evaluation come from
-//  it can very well be playout or static analyzis
-interface IEvaluator {
-  // <-1, 1> where -1 is win for white and 1 win for black
-  double evaluate();
+interface IPlayout {
+  double run(Board board, Color color);
 }
 
 /// The simplest approach - K times generate random move
 /// afterwards check for the winner
-class SimplePlayout : IEvaluator {
+class SimplePlayout : IPlayout{
 
 public:
-  this (Board board, int maxLength, ref Random gen) {
-    mBoard = new Board(board);
+  this(int maxLength, ref Random gen) {
     mMaxLength = maxLength;
     mFieldsNum = mBoard.getSize() * mBoard.getSize();
     mGenerator = &gen;
     mEmptyPos.length = mFieldsNum;
+
     foreach (i; 0 .. mFieldsNum - 1)
       mEmptyPos[i] = i;
     randomShuffle(mEmptyPos, *mGenerator);
@@ -48,10 +45,12 @@ public:
 
   static string getName() { return "simplePlayout"; } 
 
-  int[] getMoves() { return []; } 
+  Peg[] getMoves() { return []; } 
 
-  override double evaluate() {
-    Color color = Color.white; 
+  Board getBoard() { return mBoard; } 
+
+  override double run(Board board, Color color) {
+    mBoard = new Board(board);
     for (int i = 0; i < mMaxLength; i++) {
       if (step(color, i)) {
         color = flipColor(color);
@@ -81,8 +80,10 @@ private:
     int peg = mEmptyPos.front();
     mEmptyPos.popFront();
 
-    debug { lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
-        stepNum, color, peg); }
+    debug { 
+      lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
+        stepNum, color, peg); 
+    }
 
     return mBoard.placePeg(peg, color);
   };
@@ -116,11 +117,10 @@ private:
  */
 
 // TODO extract common patterns with SimplePlayout to a father class
-class BBPlayout : IEvaluator {
+class BBPlayout : IPlayout {
 
 public:
-  this (Board board, int maxLength, ref Random gen) {
-    mBoard = new Board(board);
+  this(int maxLength, ref Random gen) {
     mMaxLength = maxLength;
     mGenerator = &gen;
     mInitialLength = 10;
@@ -134,11 +134,12 @@ public:
   static string getName() { return "bbPlayout"; } 
 
   /// Retrieve moves after finished playout
-  int[] getMoves() { return mMoves; } 
+  immutable (Peg[]) getMoves() const { return mBoard.getMoves(); } 
 
-  override double evaluate() {
-    // TODO get color to start
-    Color color = Color.white; 
+  Board getBoard() { return mBoard; } 
+
+  override double run(Board board, Color color) {
+    mBoard = new Board(board);
     // this is out parameter for stepFromLast and step
     int peg;
 
@@ -150,32 +151,33 @@ public:
       // random step heur
       Heur heur = mHeurs[1];
       bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
-      debug { writefln("%s step by %s: step(%d) color(%s) peg(%s)",
-      getName(), heur.getName(), i, color, peg); }
 
-      {
-        mLastMove[color] = peg;
-        mLastHeur[color] = 1;
-        mMoves ~= peg;
-        color = flipColor(color);
-        debug { writeln(mBoard.toString()); }
+      debug { 
+        writefln("%s step by %s: step(%d) color(%s) peg(%s)",
+          getName(), heur.getName(), i, color, peg); 
       }
+
+      mLastMove[color] = peg;
+      mLastHeur[color] = 1;
+      color = flipColor(color);
+      debug { writeln(mBoard.toString()); }
     }
 
     for (int i = 0; i < mMaxLength - mInitialLength; i++) {
       foreach(hid, heur; mHeurs)
       {
         // TODO check if heuristic is to be applied based on weight
-        
         bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
-        debug { writefln("%s step by %s: step(%d) color(%s) peg(%s)",
-        getName(), heur.getName(), i, color, peg); }
+
+        debug { 
+          writefln("%s step by %s: step(%d) color(%s) peg(%s)",
+            getName(), heur.getName(), i, color, peg); 
+        }
 
         if (placed)
         {
           mLastMove[color] = peg;
           mLastHeur[color] = hid;
-          mMoves ~= peg;
           color = flipColor(color);
           debug { writeln(mBoard.toString()); }
           break;
@@ -184,7 +186,6 @@ public:
     }
 
     auto winner = mBoard.getWinner();
-
     lgr.dbug("playout finished: winner(%s)", winner);
 
     switch (winner) {
@@ -208,16 +209,13 @@ private:
   // state information by color
   int mLastMove[2];
   int mLastHeur[2];
-
-  // ordered list of moves in playout 
-  int mMoves[];
 }
 
 /**
  * Heuristics are used to select moves in the playouts.
  * Typically there is more of them and playout selects a subset
  * of these to be applied for a particular move.
- * Heuristics don't have direct access to playouts state all their
+ * Heuristics don't have direct access to playouts state. All their
  * inputs are coming as arguments of apply method. 
  */
 
@@ -381,13 +379,13 @@ void runExamplePlayout() {
   writefln("generator seed is %s", seed);
 
   Board board = new Board(24);
-  BBPlayout playout = new BBPlayout(board, 75, gen); 
-  auto res = playout.evaluate();
+  BBPlayout playout = new BBPlayout(75, gen); 
+  auto res = playout.run(board, Color.white);
   auto moves = playout.getMoves();
   string pegsJsonStr[];
 
   foreach (t; zip(moves, cycle([Color.white, Color.black])))
-    pegsJsonStr ~= pegToJsonStr(t[0] % board.getSize(), t[0] / board.getSize(), t[1]);
+    pegsJsonStr ~= pegToJsonStr(t[0].mCol, t[0].mRow, t[1]);
 
   auto jsonPlayoutStr = "[" ~ to!string(joiner(pegsJsonStr, ", ")) ~ "]";
   // template for viewing page

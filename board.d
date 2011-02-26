@@ -6,6 +6,7 @@
  */
 
 import std.algorithm;
+import std.array;
 import std.conv;
 import std.ctype;
 import std.exception;
@@ -14,6 +15,7 @@ import std.stdio;
 import std.string;
 
 import std.bitmanip : BitArray;
+import std.functional : pipe;
 import std.math : abs;
 import std.random : Random;
 import std.regex : match;
@@ -75,7 +77,7 @@ struct Peg {
     }
   }
 
-  string toString() {
+  string toString() const {
     char[] s;
     int col = mCol + 1;
     int row = mRow + 1;
@@ -90,7 +92,7 @@ struct Peg {
     s ~= to!(char[])(row);
     return to!string(s);
   }
-  
+
   int getPos(int size) const { 
     return mCol + mRow * size;
   } 
@@ -168,6 +170,8 @@ public:
     // TODO static ?
     this.mNgbOffsets = board.mNgbOffsets.dup;
     this.mSpoilOffsets = board.mSpoilOffsets.dup;
+
+    this.mMoves = board.mMoves.dup;
   }
 
   /** Loads the board from snickers string format. */
@@ -311,7 +315,16 @@ public:
     return stripLines(s);
   }
 
-  /** Dumps the board to snickers string format. */
+  /** Simple twixt format output: size move1 move2 .... */
+  string toStfString() const {
+    return to!string(mSize) ~ " " ~ to!string(joiner(array(map!(to!string)(getMoves())), " "));
+  }
+
+  string toSgfString() const {
+    return "TODO";
+  }
+  
+  /** Dumps the board to ascii-art-like board representation. */
   string toString() const {
     // result
     char[] strBoard;
@@ -395,6 +408,13 @@ public:
     return to!string(strBoard);
   }
 
+  bool isValidPeg(Peg peg) const {
+    auto pos = peg.getPos(mSize);
+    auto color = peg.mColor;
+    return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
+           !mPegs[Color.black][pos] && color != Color.empty;
+  }
+
   bool isValidPeg(int pos, Color color) const {
     return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
            !mPegs[Color.black][pos] && color != Color.empty;
@@ -440,7 +460,12 @@ public:
       mBridges[bid] = 1;
     }
 
+    mMoves ~= Peg(pos % mSize, pos / mSize, color);
     return true;
+  }
+
+  immutable (Peg[]) getMoves() const {
+    return mMoves.idup;
   }
 
   /** There must be a winner present for this to have meaning. */
@@ -807,5 +832,10 @@ private:
   // hand prepared spoil offsets for bridges
   // bridge id + elements of mSpoilOffsets[bridge type] == possible spoils
   int[9] mSpoilOffsets[4];
+
+  // TODO this should go into heavy version of board
+  // not the one for playouts (takes too much memory)
+  // ordered list of moves in playout 
+  Peg mMoves[];
 }
 

@@ -8,8 +8,7 @@ import board;
 import playout : SimplePlayout, BBPlayout;
 
 void runBenchmarks() {
-  int seed = unpredictableSeed();
-  Random gen = Random(seed);
+  Random gen = Random(unpredictableSeed());
   playoutBenchmark!(BBPlayout)(gen, 10000, 24, 90, "large board");
   playoutBenchmark!(BBPlayout)(gen, 10000, 7, 45, "small board");
   playoutBenchmark!(SimplePlayout)(gen, 10000, 24, 200, "large board");
@@ -29,8 +28,8 @@ void playoutBenchmark(Playout)(Random gen, uint playoutsNum, uint boardSize, uin
 
   for(int i = 0; i < playoutsNum; i++)
   {
-    Playout playout = new Playout(board, playoutLen, gen); 
-    auto res = playout.evaluate();
+    Playout playout = new Playout(playoutLen, gen); 
+    auto res = playout.run(board, Color.white);
     results[to!int(res) + 1]++;
   }
 

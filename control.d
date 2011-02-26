@@ -13,10 +13,12 @@ import std.exception;
 import std.stdio;
 import std.string : indexOf, format, split, strip;
 import core.thread : sleep, Thread;
+import std.random : Random, unpredictableSeed;
 import std.variant : Variant;
 
 import board : Board, BoardException, Peg;
 import engine : Engine;
+import playout;
 import types : SystemExit;
 
 class ActionException : Exception {
@@ -46,14 +48,13 @@ class Control {
     void delegate (const char[] args) mArgsAction;
     // command arguments are stored in object control
   }
-  
+
   this() {
     mRecords ~= Record(State.any, "ping", State.same, () {output("ok");});
     // creates new game, arguments are expected to be cols rows (default 24 24)
     mRecords ~= Record(State.init, "newgame", State.game, () {newGame();}, &this.newGame);
     mRecords ~= Record(State.game, "newgame", State.game, () {newGame();}, &this.newGame);
-    // loads game from file
-    // TODO
+    // TODO loads game from file
     mRecords ~= Record(State.init, "loadgame", State.game, () {;});
     mRecords ~= Record(State.game, "setoption", State.game, () {;});
     // plays given pegs in order peg is in format colrow
@@ -62,14 +63,19 @@ class Control {
     mRecords ~= Record(State.game, "play", State.game, null, &this.play);
     // start the search in a separate thread
     mRecords ~= Record(State.game, "go", State.search, &this.startSearch);
+    // returns best move during ongoing search
+    mRecords ~= Record(State.search, "getbest", State.search, &this.getBestMove);
     // stop current search and output best move so far
     mRecords ~= Record(State.search, "stop", State.game, &this.stopSearch);
+    mRecords ~= Record(State.search, "getpv", State.search, &this.getPV);
+    // runs one playout in the same thread
+    mRecords ~= Record(State.game, "doplayout", State.game, () {doPlayout();}, &this.doPlayout);
+    // analytic functions on board
+    mRecords ~= Record(State.game, "getboard", State.game, () {outputRaw(mBoard.toString());});
+    mRecords ~= Record(State.game, "getstf", State.game, () {outputRaw(mBoard.toStfString());});
+    mRecords ~= Record(State.game, "getsgf", State.game, () {outputRaw(mBoard.toSgfString());});
+    // stop the session and quit program
     mRecords ~= Record(State.any, "quit", State.same, () {output("bye"); throw new SystemExit();});
-    mRecords ~= Record(State.game, "getboard", State.game, () {output(mBoard.toString());});
-    mRecords ~= Record(State.search, "getbest", State.search, &this.getBestMove);
-    mRecords ~= Record(State.game, "getpv", State.game, &this.getPV);
-    // TODO
-    mRecords ~= Record(State.game, "getsgf", State.game, () {;});
 
     mState = State.init;
   }
@@ -123,7 +129,7 @@ class Control {
       else
         record.mArgsAction(args);
     } catch (ActionException e){
-      // no state change on action excception
+      // no state change on action exception
       log(e.msg);
     }
     
@@ -134,6 +140,10 @@ class Control {
 
   void output(string msg) {
     writeln("  " ~ msg);
+  }
+
+  void outputRaw(string msg) {
+    writeln(msg);
   }
 
   void log(string s) {
@@ -152,19 +162,19 @@ class Control {
     mBoard = new Board(size);
   }
 
+  // this is an atomic function - either all pegs are played or none
+  // this is achieved by board copying
   void play(const char[] moves) {
-    Peg[] pegs;
+    Board backup = new Board(mBoard);
     try {
       foreach (pegStr; split(moves)) {
-        pegs ~= Peg(pegStr); 
+        mBoard.placePeg(Peg(pegStr)); 
       }
     } catch (BoardException e) {
+      // revert to previous board
+      mBoard = backup;
       throw new ActionException(e.msg);
     }
-
-    // atomicity - all the pegs are played after successful parsing
-    foreach (peg; pegs)
-      mBoard.placePeg(peg);
   }
   
   void startSearch() {
@@ -187,6 +197,21 @@ class Control {
   }
 
   void getPV() {
+  }
+
+  void doPlayout(const char[] maxLengthStr="0") {
+    int maxLength;
+    try {
+      maxLength = to!int(maxLengthStr); 
+    } catch (ConvException e) {
+      throw new ActionException(format("invalid maxLength definition %s", maxLengthStr)); 
+    }
+
+    if (maxLength <= 0)
+      maxLength = mBoard.getSize() * 7;
+    BBPlayout pl = new BBPlayout(maxLength, Random(unpredictableSeed()));
+    pl.run(mBoard, Color.white);
+    mBoard = pl.getBoard();
   }
   
   static void startSearchInThread() {
