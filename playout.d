@@ -13,7 +13,7 @@ import std.conv : to;
 import std.c.time : clock;
 
 import logger;
-import board: Board, Color, flipColor, Peg;
+import board: Board, Color, FieldColor, flipColor, Peg;
 
 private {
   Logger lgr;
@@ -24,7 +24,7 @@ static this() {
 }
 
 interface IPlayout {
-  double run(Board board, Color color);
+  double run(Board board);
 }
 
 /// The simplest approach - K times generate random move
@@ -34,7 +34,7 @@ class SimplePlayout : IPlayout{
 public:
   this(int maxLength, ref Random gen) {
     mMaxLength = maxLength;
-    mFieldsNum = mBoard.getSize() * mBoard.getSize();
+    mFieldsNum = mBoard.size * mBoard.size;
     mGenerator = &gen;
     mEmptyPos.length = mFieldsNum;
 
@@ -49,13 +49,10 @@ public:
 
   Board getBoard() { return mBoard; } 
 
-  override double run(Board board, Color color) {
+  override double run(Board board) {
     mBoard = new Board(board);
     for (int i = 0; i < mMaxLength; i++) {
-      if (step(color, i)) {
-        color = flipColor(color);
-        // writeln(mBoard.toString());
-      }
+      step(i);
     }
 
     auto winner = mBoard.getWinner();
@@ -63,29 +60,28 @@ public:
     lgr.dbug("playout finished: winner(%s)", winner);
 
     switch (winner) {
-      case Color.white: return -1;
-      case Color.black: return 1;
-      case Color.empty: return 0;
+      case FieldColor.white: return -1;
+      case FieldColor.black: return 1;
+      case FieldColor.empty: return 0;
     }
   }
 
 private:
   // select move and play
   // returns true if step was performed
-  bool step(Color color, uint stepNum) {
+  bool step(uint stepNum) {
     // super simplified
-    // int peg = to!int(floor((*mGenerator).front()) % mFieldsNum);
     if (mEmptyPos.empty)
       return false;
-    int peg = mEmptyPos.front();
+    int pos = mEmptyPos.front();
     mEmptyPos.popFront();
 
     debug { 
       lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
-        stepNum, color, peg); 
+        stepNum, mBoard.toMove, pos); 
     }
 
-    return mBoard.placePeg(peg, color);
+    return mBoard.placePeg(pos);
   };
 
 private:
@@ -138,7 +134,7 @@ public:
 
   Board getBoard() { return mBoard; } 
 
-  override double run(Board board, Color color) {
+  override double run(Board board) {
     mBoard = new Board(board);
     // this is out parameter for stepFromLast and step
     int peg;
@@ -150,7 +146,8 @@ public:
     for (int i = 0; i < mInitialLength; i++) {
       // random step heur
       Heur heur = mHeurs[1];
-      bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
+      Color color = mBoard.toMove;
+      bool placed = heur.apply(i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
 
       debug { 
         writefln("%s step by %s: step(%d) color(%s) peg(%s)",
@@ -159,7 +156,6 @@ public:
 
       mLastMove[color] = peg;
       mLastHeur[color] = 1;
-      color = flipColor(color);
       debug { writeln(mBoard.toString()); }
     }
 
@@ -167,7 +163,8 @@ public:
       foreach(hid, heur; mHeurs)
       {
         // TODO check if heuristic is to be applied based on weight
-        bool placed = heur.apply(color, i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
+        Color color = mBoard.toMove;
+        bool placed = heur.apply(i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
 
         debug { 
           writefln("%s step by %s: step(%d) color(%s) peg(%s)",
@@ -178,7 +175,6 @@ public:
         {
           mLastMove[color] = peg;
           mLastHeur[color] = hid;
-          color = flipColor(color);
           debug { writeln(mBoard.toString()); }
           break;
         }
@@ -189,9 +185,9 @@ public:
     lgr.dbug("playout finished: winner(%s)", winner);
 
     switch (winner) {
-      case Color.white: return -1;
-      case Color.black: return 1;
-      case Color.empty: return 0;
+      case FieldColor.white: return -1;
+      case FieldColor.black: return 1;
+      case FieldColor.empty: return 0;
     }
   }
 
@@ -230,7 +226,6 @@ class Heur {
      * This is not a pure function because random generator state is altered.
      */
     abstract bool apply(
-      Color color,
       uint stepNum,
       int[2] lastMove,
       int[2] lastHeur,
@@ -262,7 +257,6 @@ public:
   override string getName() { return "NaivePathHeur"; }
 
   override bool apply(
-    Color color,
     uint stepNum,
     int[2] lastMove,
     int[2] lastHeur,
@@ -271,7 +265,8 @@ public:
     out int peg) {
 
     int start;
-    auto size = board.getSize();
+    auto size = board.size;
+    Color color = board.toMove;
     
     if(lastHeur[color] == mHid) {
       // continue in the naive path 
@@ -286,7 +281,7 @@ public:
       auto off = gen.front() % (size - 1);
       gen.popFront();
       if (color == Color.white) {
-        start = mRightOrDown[color] ? off : board.getFieldsNum() - 1 - off;
+        start = mRightOrDown[color] ? off : board.fieldsNum - 1 - off;
       } else {
         start = mRightOrDown[color] ? size * off : size * off + size - 1;
       }
@@ -315,7 +310,6 @@ public:
   override string getName() { return "RandomHeur"; }
 
   override bool apply(
-    Color color,
     uint stepNum,
     int[2] lastMove,
     int[2] lastHeur,
@@ -323,10 +317,10 @@ public:
     ref Random gen,
     out int peg) {
 
-    peg = to!int(floor(gen.front()) % board.getFieldsNum());
+    peg = to!int(floor(gen.front()) % board.fieldsNum);
     gen.popFront();
 
-    return board.placePeg(peg, color);
+    return board.placePeg(peg);
   }
 }
 
@@ -343,7 +337,6 @@ public:
   override string getName() { return "BridgeHeur"; }
 
   override bool apply(
-    Color color,
     uint stepNum,
     int[2] lastMove,
     int[2] lastHeur,
@@ -351,6 +344,7 @@ public:
     ref Random gen,
     out int peg) {
 
+    Color color = board.toMove;
     if (lastMove[color] == 0)
       return false;
 
@@ -380,7 +374,7 @@ void runExamplePlayout() {
 
   Board board = new Board(24);
   BBPlayout playout = new BBPlayout(75, gen); 
-  auto res = playout.run(board, Color.white);
+  auto res = playout.run(board);
   auto moves = playout.getMoves();
   string pegsJsonStr[];
 

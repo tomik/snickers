@@ -105,11 +105,15 @@ enum Color {
 }
 
 Color flipColor(Color color) 
-in {
-  assert(color != Color.empty);
-}
 body {
   return color == Color.white ? Color.black : Color.white;
+}
+
+// adds empty
+enum FieldColor {
+  white,
+  black,
+  empty
 }
 
 /** Helper function to create a "set" from an array.*/
@@ -137,6 +141,7 @@ public:
 
   this(int size) {
     mSize = size;
+    mToMove = Color.white;
     mPegs[0].length = mSize * mSize;
     mPegs[1].length = mSize * mSize;
     mBridges.length = mSize * mSize * 4;
@@ -163,6 +168,7 @@ public:
   // copy constructor
   this(Board board) {
     this.mSize = board.mSize;
+    this.mToMove = board.mToMove;
     this.mPegs[0] = board.mPegs[0].dup;
     this.mPegs[1] = board.mPegs[1].dup;
     this.mBridges = board.mBridges.dup;
@@ -315,6 +321,18 @@ public:
     return stripLines(s);
   }
 
+  /** Factory function to create board from 
+   *  given stfBoard representation: size peg1 peg2 peg3 ... */
+  static Board fromStfString(string boardStf) {
+    auto tokens = split(boardStf);
+    enforce(tokens.length >= 1, format("given invalid stf representation %s", boardStf));
+    Board b = new Board(to!int(tokens[0]));
+    foreach (pegStr; tokens[1 .. $]) {
+      b.placePeg(Peg(pegStr));
+    }
+    return b;
+  }
+
   /** Simple twixt format output: size move1 move2 .... */
   string toStfString() const {
     return to!string(mSize) ~ " " ~ to!string(joiner(array(map!(to!string)(getMoves())), " "));
@@ -412,18 +430,22 @@ public:
     auto pos = peg.getPos(mSize);
     auto color = peg.mColor;
     return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
-           !mPegs[Color.black][pos] && color != Color.empty;
+           !mPegs[Color.black][pos];
   }
 
   bool isValidPeg(int pos, Color color) const {
     return isValidPos(pos, color) && !mPegs[Color.white][pos] &&
-           !mPegs[Color.black][pos] && color != Color.empty;
+           !mPegs[Color.black][pos];
   }
 
   // this is to be used by "outer world" therefore exception
   void placePeg(Peg peg) {
     if(!placePeg(peg.getPos(mSize), peg.mColor))
       throw new BoardException(format("can't play invalid peg(%s)", peg.toString()));
+  }
+
+  bool placePeg(int pos) {
+    return placePeg(pos, mToMove);
   }
 
   bool placePeg(int pos, Color color) {
@@ -461,6 +483,7 @@ public:
     }
 
     mMoves ~= Peg(pos % mSize, pos / mSize, color);
+    mToMove = flipColor(color);
     return true;
   }
 
@@ -469,34 +492,31 @@ public:
   }
 
   /** There must be a winner present for this to have meaning. */
-  Color getWinner() const {
+  FieldColor getWinner() const {
     if (checkWinner(Color.white))
-      return Color.white;
+      return FieldColor.white;
 
     if (checkWinner(Color.black))
-      return Color.black;
+      return FieldColor.black;
 
-    return Color.empty;
+    return FieldColor.empty;
   }
 
-  int getSize() const {
-    return mSize;
-  }
+  @property Color toMove() { return mToMove; }
 
-  int getFieldsNum() const {
-    return mSize * mSize;
-  }
+  @property int size() { return mSize; }
+  @property int fieldsNum() { return mSize * mSize; }
 
   // analyzer part - TODO put this aside to another object
 
-  Color getPosColor(int pos) const {
+  FieldColor getPosColor(int pos) const {
     if (mPegs[Color.white][pos])
-      return Color.white;
+      return FieldColor.white;
 
     if (mPegs[Color.black][pos])
-      return Color.black;
+      return FieldColor.black;
 
-    return Color.empty;
+    return FieldColor.empty;
   }
 
   int getPeerByRandom(int pos, Color color, ref Random gen) const {
@@ -521,7 +541,7 @@ public:
   
   int getPeerByStupidPath(int pos, Color color, bool rightOrDown, ref Random gen) const {
 
-    if (getPosColor(pos) == color.empty)
+    if (getPosColor(pos) == FieldColor.empty)
       return pos; 
 
     static int[4] where[4] = 
@@ -819,6 +839,12 @@ private:
 private:
 
   int mSize;
+
+  // whose turn it is
+  // it is not checked if a placed peg corresponds to player to move 
+  // so playing couple of moves of same color in row is possible
+  // however the board remembers who "should" be to move
+  Color mToMove;
 
   // presence map for white/blag pegs
   BitArray mPegs[2];

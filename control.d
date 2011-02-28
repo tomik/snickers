@@ -178,7 +178,10 @@ class Control {
   }
   
   void startSearch() {
-    mSearchTid = spawnLinked(&startSearchInThread);
+    // TODO didn't find a way to create an immutable/shared copy of the board object
+    // for now just passing a string representation from which object can be reconstructed
+    string repr =  mBoard.toStfString();
+    mSearchTid = spawnLinked!string(&startSearchInThread, repr);
     log("search started");
   }
 
@@ -192,8 +195,9 @@ class Control {
 
   void getBestMove() {
     mSearchTid.send(thisTid, "bestmove");
+    // receive( (Variant any) { writeln(any); });
     auto peg = receiveOnly!Peg();
-    log(format("best move is %s", peg));
+    log(format("best move is %s", to!string(peg)));
   }
 
   void getPV() {
@@ -208,15 +212,15 @@ class Control {
     }
 
     if (maxLength <= 0)
-      maxLength = mBoard.getSize() * 7;
+      maxLength = mBoard.size * 7;
     BBPlayout pl = new BBPlayout(maxLength, Random(unpredictableSeed()));
-    pl.run(mBoard, Color.white);
+    pl.run(mBoard);
     mBoard = pl.getBoard();
   }
   
-  static void startSearchInThread() {
+  static void startSearchInThread(string boardStr) {
     Engine engine = new Engine();
-    engine.search();
+    engine.search(boardStr);
   }
 
   private:

@@ -29,7 +29,7 @@ void playoutBenchmark(Playout)(Random gen, uint playoutsNum, uint boardSize, uin
   for(int i = 0; i < playoutsNum; i++)
   {
     Playout playout = new Playout(playoutLen, gen); 
-    auto res = playout.run(board, Color.white);
+    auto res = playout.run(board);
     results[to!int(res) + 1]++;
   }
 
