@@ -70,7 +70,7 @@ class Engine {
     double mult = mBoard.toMove == Color.white ? 1 : -1;
 
     debug {
-      writefln("evaluation for color(%s)", board.toMove);
+      writefln("evaluation for color(%s)", mBoard.toMove);
     }
 
     for (auto i = 0; i < mStats.length; i++) {

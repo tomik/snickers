@@ -76,10 +76,8 @@ private:
     int pos = mEmptyPos.front();
     mEmptyPos.popFront();
 
-    debug { 
-      lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
-        stepNum, mBoard.toMove, pos); 
-    }
+    lgr.trace("simple playouter: step(%d) color(%s) peg(%s)",
+      stepNum, mBoard.toMove, pos); 
 
     return mBoard.placePeg(pos);
   };
@@ -149,14 +147,12 @@ public:
       Color color = mBoard.toMove;
       bool placed = heur.apply(i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
 
-      debug { 
-        writefln("%s step by %s: step(%d) color(%s) peg(%s)",
-          getName(), heur.getName(), i, color, peg); 
-      }
+      lgr.trace("%s step by %s: step(%d) color(%s) peg(%s)",
+        getName(), heur.getName(), i, color, peg); 
 
       mLastMove[color] = peg;
       mLastHeur[color] = 1;
-      debug { writeln(mBoard.toString()); }
+      lgr.trace(mBoard.toString());
     }
 
     for (int i = 0; i < mMaxLength - mInitialLength; i++) {
@@ -166,16 +162,14 @@ public:
         Color color = mBoard.toMove;
         bool placed = heur.apply(i, mLastMove, mLastHeur, mBoard, *mGenerator, peg);
 
-        debug { 
-          writefln("%s step by %s: step(%d) color(%s) peg(%s)",
-            getName(), heur.getName(), i, color, peg); 
-        }
+        lgr.trace("%s step by %s: step(%d) color(%s) peg(%s)",
+          getName(), heur.getName(), i, color, peg); 
 
         if (placed)
         {
           mLastMove[color] = peg;
           mLastHeur[color] = hid;
-          debug { writeln(mBoard.toString()); }
+          lgr.trace(mBoard.toString());
           break;
         }
       }
@@ -370,7 +364,7 @@ void runExamplePlayout() {
 
   int seed = unpredictableSeed();
   Random gen = Random(seed);
-  writefln("generator seed is %s", seed);
+  lgr.trace("generator seed is %s", seed);
 
   Board board = new Board(24);
   BBPlayout playout = new BBPlayout(75, gen); 

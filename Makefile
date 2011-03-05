@@ -1,15 +1,18 @@
 
+FLAGS=-Ix_logger/
+LOCATIONS=snickers/*d x_logger/*d
+
 all:
-	dmd *d -gc -debug -unittest -ofsnickers
-	./snickers
+	dmd $(FLAGS) $(LOCATIONS) -gc -debug -unittest -ofbin/snickers
+	./bin/snickers
 
 dbg:
-	dmd *d -gc -debug -unittest -ofsnickers
-	./snickers
+	dmd $(FLAGS) $(LOCATIONS) -gc -debug -unittest -ofbin/snickers
+	./bin/snickers
 
 prof:
-	dmd *d -O -ofsnickers
-	./snickers
+	dmd $(FLAGS) $(LOCATIONS) -O -ofbin/snickers
+	./bin/snickers
 
 clean:
-	rm *o snickers *log
+	rm *o bin/* *log 2> /dev/null

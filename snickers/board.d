@@ -279,8 +279,9 @@ public:
           format("can't place bridge(%s) considered placeable", bridge));
       }
 
-    lgr.trace("loading board: bridges all(%s) bridges in cross(%s)",
-      allBridges, inCross);
+    lgr.trace("loading board: bridges all(%s) bridges in cross(%s)");
+    // lgr.trace("loading board: bridges all(%s) bridges in cross(%s)",
+      // allBridges, inCross);
 
     // indicator of change
     int lastLen = 0;
