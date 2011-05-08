@@ -7,15 +7,32 @@
  */
 
 import core.thread : sleep;
-// import core.time : dur;
+import core.time : dur;
 import std.concurrency;
+import std.datetime : StopWatch;
 import std.stdio;
+import std.string : format;
 import std.random : Random, unpredictableSeed;
 import std.variant : Variant;
 import std.typecons : Tuple, tuple;
 
 import board : Board, Color, flipColor, Peg;
 import playout : BBPlayout;
+
+const int TIME_PER_MOVE = 5;
+
+struct SearchStats {
+  Peg mBestMove;
+  // in milliseconds
+  double mTimeElapsedMls;
+  int mPlayouts;
+  double mWinConfidence;
+
+  string toString() {
+    return format("playouts: %s | time: %s | confidence: %s",
+             mPlayouts, mTimeElapsedMls, mWinConfidence);
+  }
+}
 
 class Engine {
 
@@ -25,9 +42,12 @@ class Engine {
     mStats[1 .. $] = tuple(0.0, 0);
     Random gen = Random(unpredictableSeed);
     Color color = mBoard.toMove;
+    StopWatch sw;
 
     auto i = 1;
     int playouts = 0;
+
+    sw.start();
 
     while (1) {
       if (i % mSearchInterrupt == 0)
@@ -36,9 +56,16 @@ class Engine {
           &this.handleAction,
           (Variant any) { assert(false); });
 
+        if (!mShouldStop && sw.peek().seconds > TIME_PER_MOVE) {
+          mShouldStop = true;
+        }
+
         if (mShouldStop)
         {
-          writeln(playouts, " playouts");
+          mSearchStats.mBestMove = getBestMove();
+          mSearchStats.mPlayouts = playouts;
+          mSearchStats.mTimeElapsedMls = sw.peek().msecs / 1000.0;
+          mSearchStats.mWinConfidence = 0.5;
           return;
         }
       }
@@ -57,11 +84,15 @@ class Engine {
 
       Board playoutBoard = new Board(mBoard); 
       playoutBoard.placePeg(peg);
-      BBPlayout playout = new BBPlayout(100, gen);
-      double result = playout.run(playoutBoard);
+      BBPlayout playout = new BBPlayout(playoutBoard, 100, gen);
+      double result = playout.run();
       mStats[pos][1] += 1; 
       mStats[pos][0] += result; 
     }
+  }
+
+  SearchStats getSearchStats() {
+    return mSearchStats;
   }
 
   Peg getBestMove() {
@@ -114,6 +145,7 @@ class Engine {
     // sum of score vs. total games
     Tuple!(double, int)[] mStats;
     Board mBoard;
+    SearchStats mSearchStats;
 }
 
 

@@ -5,7 +5,6 @@
 
 import std.array : empty, front, popFront;
 import std.stdio;
-import std.datetime : systime;
 import std.random : Random, randomShuffle;
 import std.math : floor;
 import std.conv : to;
@@ -24,7 +23,7 @@ static this() {
 }
 
 interface IPlayout {
-  double run(Board board);
+  double run();
 }
 
 /// The simplest approach - K times generate random move
@@ -32,7 +31,8 @@ interface IPlayout {
 class SimplePlayout : IPlayout{
 
 public:
-  this(int maxLength, ref Random gen) {
+  this(Board board, int maxLength, ref Random gen) {
+    mBoard = new Board(board);
     mMaxLength = maxLength;
     mFieldsNum = mBoard.size * mBoard.size;
     mGenerator = &gen;
@@ -49,8 +49,7 @@ public:
 
   Board getBoard() { return mBoard; } 
 
-  override double run(Board board) {
-    mBoard = new Board(board);
+  override double run() {
     for (int i = 0; i < mMaxLength; i++) {
       step(i);
     }
@@ -114,7 +113,8 @@ private:
 class BBPlayout : IPlayout {
 
 public:
-  this(int maxLength, ref Random gen) {
+  this(Board board, int maxLength, ref Random gen) {
+    mBoard = new Board(board);
     mMaxLength = maxLength;
     mGenerator = &gen;
     mInitialLength = 10;
@@ -132,8 +132,7 @@ public:
 
   Board getBoard() { return mBoard; } 
 
-  override double run(Board board) {
-    mBoard = new Board(board);
+  override double run() {
     // this is out parameter for stepFromLast and step
     int peg;
 
@@ -367,8 +366,8 @@ void runExamplePlayout() {
   lgr.trace("generator seed is %s", seed);
 
   Board board = new Board(24);
-  BBPlayout playout = new BBPlayout(75, gen); 
-  auto res = playout.run(board);
+  BBPlayout playout = new BBPlayout(board, 75, gen); 
+  auto res = playout.run();
   auto moves = playout.getMoves();
   string pegsJsonStr[];
 

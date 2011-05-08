@@ -1,5 +1,5 @@
 
-import std.datetime : systime, benchmark, StopWatch; 
+import std.datetime : benchmark, StopWatch; 
 import std.random : Random, unpredictableSeed;
 import std.conv;
 import std.stdio;
@@ -28,14 +28,14 @@ void playoutBenchmark(Playout)(Random gen, uint playoutsNum, uint boardSize, uin
 
   for(int i = 0; i < playoutsNum; i++)
   {
-    Playout playout = new Playout(playoutLen, gen); 
-    auto res = playout.run(board);
+    Playout playout = new Playout(board, playoutLen, gen); 
+    auto res = playout.run();
     results[to!int(res) + 1]++;
   }
 
   sw.stop();
   // in seconds
-  double elapsed = sw.peek().msec / 1000.0;
+  double elapsed = sw.peek().to!("msecs", long) / 1000.0;
 
   writefln("====================\n"
            "%s (%s) \n"

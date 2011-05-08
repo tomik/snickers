@@ -6,6 +6,7 @@ import benchmarks : runBenchmarks;
 import control : Control;
 import playout : runExamplePlayout;
 import types : SystemExit, config;
+import tei : TeiParser;
 
 import std.stdio;
 
@@ -42,7 +43,8 @@ int main(string[] args) {
   // starts snickers interactive command line
   try {
     Control control = new Control(); 
-    control.runInputLoop();
+    TeiParser teiParser = new TeiParser(control); 
+    teiParser.runInputLoop();
   } catch (SystemExit) {
     return 0;
   }
